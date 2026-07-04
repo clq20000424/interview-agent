@@ -2,24 +2,36 @@ package com.interview.agent.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.interview.agent.agent.*;
+import com.interview.agent.agent.ChatAgent;
+import com.interview.agent.agent.IntentRouter;
 import com.interview.agent.auth.JwtService;
-import com.interview.agent.graph.*;
-import com.interview.agent.loader.*;
-import com.interview.agent.memory.*;
-import com.interview.agent.model.*;
-import com.interview.agent.rag.*;
+import com.interview.agent.graph.InterviewCallbacks;
+import com.interview.agent.graph.Orchestrator;
+import com.interview.agent.graph.UserQuitException;
+import com.interview.agent.loader.DocumentLoader;
+import com.interview.agent.loader.QuestionParser;
+import com.interview.agent.loader.WebLoader;
+import com.interview.agent.memory.RedisStore;
+import com.interview.agent.model.AnswerScore;
+import com.interview.agent.model.ClientMsg;
+import com.interview.agent.model.ServerMsg;
+import com.interview.agent.rag.BM25Manager;
+import com.interview.agent.rag.MilvusStore;
+import com.interview.agent.rag.RagDocument;
 import com.interview.agent.skill.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Component;
-import org.springframework.web.socket.*;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 
 /**
@@ -51,7 +63,9 @@ public class WebSocketHandler extends TextWebSocketHandler {
     private final JwtService jwtService;
     private final ChatModel chatModel;
 
-    /** session 管理 */
+    /**
+     * session 管理
+     */
     private final Map<String, WSSession> sessions = new ConcurrentHashMap<>();
 
     /**
@@ -86,7 +100,9 @@ public class WebSocketHandler extends TextWebSocketHandler {
         this.chatModel = chatModel;
     }
 
-    /** WebSocket 会话状态 */
+    /**
+     * WebSocket 会话状态
+     */
     private static class WSSession {
         WebSocketSession conn;
         String userID;
@@ -467,7 +483,9 @@ public class WebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 格式化题库解析的校验失败详情（与 Go formatParseErrors 一致），无错误返回 null（NON_NULL 不序列化） */
+    /**
+     * 格式化题库解析的校验失败详情（与 Go formatParseErrors 一致），无错误返回 null（NON_NULL 不序列化）
+     */
     private String formatParseErrors(List<QuestionParser.ParseError> errs) {
         if (errs == null || errs.isEmpty()) return null;
         StringBuilder sb = new StringBuilder();
