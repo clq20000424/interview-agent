@@ -2,10 +2,13 @@ package com.interview.agent.rag;
 
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
- * RRF（Reciprocal Rank Fusion）融合算法（与 Go 版本一致）
+ * RRF（Reciprocal Rank Fusion）融合算法
  * k = 60
  *
  * @author 陈龙强
@@ -13,13 +16,16 @@ import java.util.*;
 @Component
 public class RRFusion {
 
-    /** RRF 融合算法的常数 k，默认 60 */
+    /**
+     * RRF 融合算法的常数 k，默认 60
+     */
     private static final int RRF_CONSTANT = 60;
 
     /**
      * 多路召回 RRF 融合
+     *
      * @param allResults 每一路的检索结果
-     * @param topK 最终返回的文档数
+     * @param topK       最终返回的文档数
      */
     public List<RagDocument> fuse(List<List<RagDocument>> allResults, int topK) {
         if (topK <= 0) topK = 10;

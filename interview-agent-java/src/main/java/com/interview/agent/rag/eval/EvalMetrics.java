@@ -3,7 +3,7 @@ package com.interview.agent.rag.eval;
 import java.util.*;
 
 /**
- * 检索评估指标计算工具（与 Go 版本 evaluation_metrics.go 的指标函数一致）。
+ * 检索评估指标计算工具。
  *
  * 指标定义：
  * - Recall@K = |Top-K ∩ Relevant| / |Relevant|

@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Skill 的交互状态（与 Go 版本一致）
+ * Skill 的交互状态
  *
  * @author 陈龙强
  */
@@ -41,7 +41,9 @@ public class SkillState {
         this.round++;
     }
 
-    /** 检查 Skill 会话是否已过期（30 分钟） */
+    /**
+     * 检查 Skill 会话是否已过期（30 分钟）
+     */
     public boolean isExpired() {
         return Duration.between(startedAt, LocalDateTime.now()).toMinutes() > 30;
     }

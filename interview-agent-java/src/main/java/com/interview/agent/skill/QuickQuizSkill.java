@@ -16,7 +16,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 快速测验技能（与 Go 版本一致）
+ * 快速测验技能
  * - 解析主题与题数（默认 5 道，支持「来5道Redis题」，范围 1~10）
  * - RAG 检索题目，不足部分用 LLM 补齐
  * - 逐题作答评分（含命中/遗漏要点）
@@ -27,14 +27,14 @@ import java.util.regex.Pattern;
 @Slf4j
 public class QuickQuizSkill implements Skill {
 
-    // 触发快速测验的动作词（对齐 Go quizActions）
+    // 触发快速测验的动作词
     private static final List<String> QUIZ_ACTIONS = List.of(
             "练", "测验", "考考", "出题", "来几道", "做几道", "练几道",
             "快速测验", "出几道", "来道", "做道", "练道"
     );
-    // 测验类上下文关键词（对齐 Go quizContexts）
+    // 测验类上下文关键词
     private static final List<String> QUIZ_CONTEXTS = List.of("题", "面试题", "问题");
-    // 明确的技术主题（对齐 Go hasNumberOrTopic）
+    // 明确的技术主题
     private static final List<String> QUIZ_TOPICS = List.of(
             "go", "redis", "mysql", "kafka", "docker", "k8s",
             "grpc", "http", "并发", "网络", "数据库", "算法", "系统设计", "微服务"
@@ -53,10 +53,14 @@ public class QuickQuizSkill implements Skill {
     }
 
     @Override
-    public String name() { return "quick_quiz"; }
+    public String name() {
+        return "quick_quiz";
+    }
 
     @Override
-    public String description() { return "快速测验——输入主题即可练习面试题，即时评分反馈"; }
+    public String description() {
+        return "快速测验——输入主题即可练习面试题，即时评分反馈";
+    }
 
     @Override
     public boolean match(String input) {
@@ -182,7 +186,7 @@ public class QuickQuizSkill implements Skill {
         state.getData().put("scores", scores);
         state.nextRound();
 
-        // 构建评分反馈（对齐 Go：得分 + 命中 + 遗漏 + 反馈）
+        // 构建评分反馈
         StringBuilder sb = new StringBuilder();
         if (score >= 70) {
             sb.append(String.format("✅ **得分：%.0f/100**\n\n", score));
@@ -257,7 +261,9 @@ public class QuickQuizSkill implements Skill {
         return questions;
     }
 
-    /** 将 RAG 文档转为测验题目（拆分题目/参考答案，提取难度） */
+    /**
+     * 将 RAG 文档转为测验题目（拆分题目/参考答案，提取难度）
+     */
     private Map<String, Object> toQuizQuestion(RagDocument doc) {
         String[] parts = splitContentAndReference(doc.getContent());
         if (parts[0] == null || parts[0].isEmpty()) {
@@ -288,13 +294,14 @@ public class QuickQuizSkill implements Skill {
                 [
                   {"content": "题目内容", "reference": "参考答案要点", "difficulty": "easy/medium/hard"}
                 ]
-
+                
                 只输出 JSON，不要其他文字。""", count, topic);
 
         try {
             ChatResponse response = chatModel.call(new Prompt(prompt));
             String json = AgentUtils.extractJSON(response.getResult().getOutput().getText());
-            List<Map<String, Object>> list = objectMapper.readValue(json, new TypeReference<>() {});
+            List<Map<String, Object>> list = objectMapper.readValue(json, new TypeReference<>() {
+            });
             // 兜底：确保每题带 difficulty
             for (Map<String, Object> q : list) {
                 q.putIfAbsent("difficulty", "medium");
@@ -310,16 +317,16 @@ public class QuickQuizSkill implements Skill {
     private Map<String, Object> scoreAnswer(String question, String answer, String reference) {
         String prompt = String.format("""
                 请对候选人的回答进行客观评分和反馈。
-
+                
                 题目：%s
                 候选人回答：%s
                 参考答案要点：%s
-
+                
                 【核心原则】严格基于候选人实际回答的内容进行评分：
                 - 只认定候选人明确表述出来的知识点
                 - 候选人没有提到的知识点，一律算作遗漏
                 - 候选人说"不会"、"不知道"等，得分应为 0-10 分
-
+                
                 请输出纯 JSON 格式：
                 {
                   "score": <0-100>,
@@ -331,7 +338,8 @@ public class QuickQuizSkill implements Skill {
         try {
             ChatResponse response = chatModel.call(new Prompt(prompt));
             String json = AgentUtils.extractJSON(response.getResult().getOutput().getText());
-            return objectMapper.readValue(json, new TypeReference<>() {});
+            return objectMapper.readValue(json, new TypeReference<>() {
+            });
         } catch (Exception e) {
             log.warn("[QuickQuiz] 评分失败: {}", e.getMessage());
             return Map.of("score", 0, "feedback", "评分失败，已跳过");
@@ -397,7 +405,9 @@ public class QuickQuizSkill implements Skill {
     // 辅助函数
     // ============================================================
 
-    /** 从用户输入中提取主题和题目数量（对齐 Go parseQuizInput） */
+    /**
+     * 从用户输入中提取主题和题目数量
+     */
     private QuizInput parseQuizInput(String input) {
         int count = 5; // 默认 5 题
 
@@ -407,7 +417,8 @@ public class QuickQuizSkill implements Skill {
             try {
                 int n = Integer.parseInt(m.group(1));
                 if (n > 0) count = n;
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException ignored) {
+            }
         }
 
         // 移除触发词和数量词，剩下的就是主题
@@ -423,7 +434,9 @@ public class QuickQuizSkill implements Skill {
         return new QuizInput(topic, count);
     }
 
-    /** 判断输入中是否包含数字或明确的技术主题（对齐 Go hasNumberOrTopic） */
+    /**
+     * 判断输入中是否包含数字或明确的技术主题
+     */
     private boolean hasNumberOrTopic(String input) {
         if (Pattern.compile("\\d").matcher(input).find()) {
             return true;
@@ -466,6 +479,9 @@ public class QuickQuizSkill implements Skill {
         return List.of();
     }
 
-    /** 主题 + 题数 */
-    private record QuizInput(String topic, int count) {}
+    /**
+     * 主题 + 题数
+     */
+    private record QuizInput(String topic, int count) {
+    }
 }

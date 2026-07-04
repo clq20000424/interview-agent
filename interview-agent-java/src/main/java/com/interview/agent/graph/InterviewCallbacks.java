@@ -7,7 +7,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * 面试过程回调（与 Go 版本一致）
+ * 面试过程回调
  *
  * @author 陈龙强
  */

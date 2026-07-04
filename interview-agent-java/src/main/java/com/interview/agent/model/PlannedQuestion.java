@@ -17,15 +17,44 @@ import java.util.List;
 @AllArgsConstructor
 public class PlannedQuestion {
 
+    /**
+     * id
+     */
     private String id;
+
+    /**
+     * 内容
+     */
     private String content;
-    private String type;        // basic/experience/design
-    private String difficulty;  // easy/medium/hard
+
+    /**
+     * 问题类型 basic/experience/design
+     */
+    private String type;
+
+    /**
+     * 难易程度 easy/medium/hard
+     */
+    private String difficulty;
+
+    /**
+     * skill 列表
+     */
     private List<String> skills;
 
+    /**
+     * 追问信息
+     */
     @JsonProperty("follow_ups")
     private List<String> followUps;
 
+    /**
+     * 引用信息
+     */
     private String reference;
-    private String source;      // 题库原题ID 或 "llm"
+
+    /**
+     * 题库原题ID 或 "llm"
+     */
+    private String source;
 }

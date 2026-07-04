@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 注册登录 Controller（与 Go 版本 auth/handler.go 路径和响应格式一致）
+ * 注册登录 Controller
  * POST /api/register
  * POST /api/login
  *

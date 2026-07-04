@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 /**
- * JWT 认证服务（与 Go 版本 auth/auth.go 逻辑一致）
+ * JWT 认证服务
  *
  * @author 陈龙强
  */

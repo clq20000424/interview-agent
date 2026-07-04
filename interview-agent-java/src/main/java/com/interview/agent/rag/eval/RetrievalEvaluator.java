@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 /**
- * RAG 离线检索评估流水线（与 Go 版本 RunEvaluation / retrieveForEval 一致）。
+ * RAG 离线检索评估流水线。
  *
  * 整体流程：
  * 1. 遍历每条样本，用 sample.query 跑完整的 RAG 检索（Milvus + BM25 + Rerank）

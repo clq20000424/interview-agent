@@ -1,17 +1,17 @@
 package com.interview.agent.agent;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.agent.model.JDAnalysis;
 import com.interview.agent.model.Resume;
 import com.interview.agent.model.ResumeMatchResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -30,9 +30,9 @@ public class ResumeMatcher {
 
     private static final String RESUME_MATCHER_PROMPT = """
             你是一个专业的简历匹配分析专家。你需要将候选人的简历与目标岗位 JD 进行深度匹配分析。
-
+            
             请按照以下 JSON 格式输出匹配结果（不要输出其他内容，只输出纯 JSON）：
-
+            
             {
               "overall_score": 75.0,
               "skill_match": [
@@ -49,7 +49,7 @@ public class ResumeMatcher {
               "focus_areas": ["面试重点考察方向1", "面试重点考察方向2"],
               "resume_gaps": ["简历空白点1（可深挖的地方）"]
             }
-
+            
             评分标准：
             - overall_score: 0-100 分，综合考虑技能匹配度、经验相关性、项目质量
             - skill_match: 逐项列出 JD 要求的技能，标注是否在简历中匹配到；每一项只能包含 skill_name、required、matched、match_score、evidence 这 5 个字段，不要输出 preferred、category、importance 等额外字段

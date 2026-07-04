@@ -13,11 +13,14 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 题库解析器：使用 LLM 将非结构化题库文本解析为结构化题目（与 Go 版本一致）
+ * 题库解析器：使用 LLM 将非结构化题库文本解析为结构化题目
  * - 超过 maxSegmentLen 的文本按段落边界分段，逐段调用 LLM
  * - 校验题目字段合法性
  *
@@ -38,14 +41,14 @@ public class QuestionParser {
 
     private static final String QUESTION_PARSER_PROMPT = """
             你是一个面试题库解析专家。请从以下文本中提取所有面试题，并转换为结构化 JSON 格式。
-
+            
             ## 输入文本
             %s
-
+            
             ## 输出要求
-
+            
             请输出一个 JSON 数组，每道题包含以下字段：
-
+            
             [
               {
                 "content": "题目文本（完整的面试问题）",
@@ -55,20 +58,20 @@ public class QuestionParser {
                 "skills": ["技能标签1", "技能标签2"]
               }
             ]
-
+            
             ## 严格规则（必须遵守）
-
+            
             1. difficulty 只能是以下三个值之一：easy、medium、hard。根据题目考察深度判断。
             2. type 只能是以下四个值之一：
                - basic：基础知识/概念题
                - project：项目经验/实战题
                - design：系统设计/架构题
                - algorithm：算法/数据结构题
-            3. skills 必须是非空数组，填写该题考察的技术方向（如 "Go"、"MySQL"、"Redis"、"微服务"等）。
+            3. skills 必须是非空数组，填写该题考察的技术方向。
             4. content 必须是完整的题目文本，不要截断。
             5. reference 必须完整照搬原文中的答案内容，不得改写、缩写或重新组织。如果原文没有答案，填空字符串 ""。
             6. 只输出 JSON 数组，不要输出任何其他文字。
-
+            
             请严格按照上述格式输出，不要添加额外字段，不要修改字段名称。""";
 
     private final ChatModel chatModel;
@@ -169,16 +172,19 @@ public class QuestionParser {
         String content = extractJSONArray(response.getResult().getOutput().getText());
 
         try {
-            return objectMapper.readValue(content, new TypeReference<>() {});
+            return objectMapper.readValue(content, new TypeReference<>() {
+            });
         } catch (Exception e) {
             // 尝试修复被截断的 JSON
             String repaired = tryRepairJSONArray(content);
             if (repaired != null) {
                 try {
-                    List<ParsedQuestion> result = objectMapper.readValue(repaired, new TypeReference<>() {});
+                    List<ParsedQuestion> result = objectMapper.readValue(repaired, new TypeReference<>() {
+                    });
                     log.info("[question_parser] JSON 被截断，自动修复成功（恢复 {} 道题）", result.size());
                     return result;
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
             }
             throw new RuntimeException("question_parser: json parse failed: " + e.getMessage());
         }

@@ -5,7 +5,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 意图路由器（关键词匹配，非 LLM），与 Go 版本逻辑完全一致。
+ * 意图路由器（关键词匹配，非 LLM）。
  *
  * @author 陈龙强
  */
@@ -38,7 +38,7 @@ public class IntentRouter {
     );
 
     /**
-     * 路由用户输入到对应意图（与 Go 版本路由优先级完全一致）
+     * 路由用户输入到对应意图
      */
     public String route(String input, boolean isInterviewing) {
         // 面试进行中：所有输入都走面试流程

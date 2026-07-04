@@ -4,21 +4,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.agent.model.AnswerScore;
 import com.interview.agent.model.InterviewState;
 import com.interview.agent.model.PlannedQuestion;
-import com.interview.agent.model.QAPair;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * @author 陈龙强
@@ -33,14 +30,14 @@ public class Interviewer {
 
     private static final String INTERVIEWER_SYSTEM_PROMPT = """
             你是一位资深的技术面试官，风格专业但友善。你正在进行一场技术面试。
-
+            
             面试规则：
             1. 每次只问一个问题，等候选人回答后再继续
             2. 根据候选人回答质量决定是否追问
             3. 对优秀的回答给予肯定，对不完整的回答进行引导
             4. 保持专业、友善的语气
             5. 不要直接告诉候选人答案
-
+            
             当前面试上下文：
             - 岗位：%s
             - 当前第 %d/%d 题
@@ -49,20 +46,20 @@ public class Interviewer {
 
     private static final String SCORE_PROMPT = """
             请对候选人的回答进行客观评分和反馈。
-
+            
             题目：%s
             候选人回答：%s
             参考答案要点：%s
-
+            
             【核心原则】严格基于候选人实际回答的内容进行评分：
             - 只认定候选人明确表述出来的知识点，不要推测、脑补、或替候选人补充任何内容
             - 候选人没有提到的知识点，一律算作遗漏（key_points_missed）
             - 候选人说"不会"、"不知道"、"不太了解"、"跳过"等，得分应为 0-10 分
             - 候选人回答偏题或答非所问，得分应为 0-20 分
             - feedback 要指出候选人具体哪里答得好、哪里没有覆盖到，不要笼统夸奖
-
+            
             请先逐条对照参考答案要点，列出候选人命中了哪些、遗漏了哪些，再根据命中比例和深度给出分数。
-
+            
             请输出纯 JSON 格式：
             {
               "score": <0-100的数值，根据下方评分标准和实际命中比例计算>,
@@ -71,7 +68,7 @@ public class Interviewer {
               "key_points_missed": ["候选人未提到的知识点1", "知识点2"],
               "should_follow_up": true
             }
-
+            
             评分标准：
             - 90-100：完美回答，覆盖所有要点且有深度
             - 70-89：良好回答，覆盖主要要点
@@ -81,15 +78,15 @@ public class Interviewer {
 
     private static final String UPDATE_PROFILE_PROMPT = """
             请基于以下信息更新候选人画像。要求：简洁、结构化、不超过200字。
-
+            
             %s
-
+            
             本轮新信息：
             - 第 %d 题，考察技能：%s
             - 得分：%.0f/100
             - 命中要点：%s
             - 遗漏要点：%s
-
+            
             请输出更新后的完整画像（纯文本，不要 JSON）。画像应包含：
             1. 技能强项（哪些领域表现好）
             2. 薄弱领域（哪些方面需加强）
@@ -114,8 +111,6 @@ public class Interviewer {
 
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(systemPrompt));
-
-        // 与 Go 版本一致：直接提出题库原题、保持简洁，不要让模型加铺垫或改写。
         // 也不再塞入历史问答（每题独立、干净地提出），避免模型被上下文诱导加承接语。
         // （之前的「可以适当改写使其更自然」会让模型加上「好的，我们进入下一个问题」「（稍作停顿）」
         //   等大量啰嗦的承接语和铺垫，既不像题库原题，也会让第一题看起来像在承接上一题。）
@@ -162,7 +157,7 @@ public class Interviewer {
      * 更新候选人动态画像
      */
     public String updateCandidateProfile(String currentProfile, int questionNum,
-                                          PlannedQuestion question, AnswerScore score) {
+                                         PlannedQuestion question, AnswerScore score) {
         String prevProfile = (currentProfile != null && !currentProfile.isEmpty())
                 ? "当前画像：\n" + currentProfile
                 : "（尚无历史画像，这是第一题）";
@@ -185,16 +180,16 @@ public class Interviewer {
     public String followUp(InterviewState state, PlannedQuestion question,
                            String answer, String feedback, List<String> missedPoints, String position) {
         String systemPrompt = String.format("""
-                你是一位资深的技术面试官，正在对候选人的回答进行追问。
-                岗位：%s，当前第 %d/%d 题。
-
-                原题：%s
-                候选人回答：%s
-                评分反馈：%s
-                遗漏知识点：%s
-
-                请针对候选人遗漏的知识点，提出一个引导性的追问，帮助候选人展示更多能力。
-                要求：只输出追问内容，不要输出其他解释。""",
+                        你是一位资深的技术面试官，正在对候选人的回答进行追问。
+                        岗位：%s，当前第 %d/%d 题。
+                        
+                        原题：%s
+                        候选人回答：%s
+                        评分反馈：%s
+                        遗漏知识点：%s
+                        
+                        请针对候选人遗漏的知识点，提出一个引导性的追问，帮助候选人展示更多能力。
+                        要求：只输出追问内容，不要输出其他解释。""",
                 position,
                 state.getCurrentQuestion(),
                 state.getTotalQuestions(),

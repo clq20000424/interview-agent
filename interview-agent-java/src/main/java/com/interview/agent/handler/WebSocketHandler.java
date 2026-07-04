@@ -35,7 +35,7 @@ import java.util.Map;
 import java.util.concurrent.*;
 
 /**
- * WebSocket 处理器（与 Go 版本 ws_handler.go 完全一致的协议和逻辑）
+ * WebSocket 处理器
  * - handleChat：3 级优先级（active skill → skill match → ChatAgent）
  * - handleStartInterview：创建 Orchestrator，异步运行面试
  * - handleAnswer：通过 answerCh 传递用户回答
@@ -194,7 +194,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
                 return;
             }
 
-            // 增强（Go 版本无）：技能会话进行中，若用户又发出明确的新技能/新测验意图
+            // 增强：技能会话进行中，若用户又发出明确的新技能/新测验意图
             // （例如测验做到一半再说「来几道 mysql 面试题」），则结束当前会话、切换到新技能，
             // 而不是把这句话当成当前题目的回答。普通的答题内容不含触发词，不会被误切。
             if (skillRegistry.match(input) == null) {
@@ -251,7 +251,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // 解析 JD / 简历输入：支持 [FILE:] 文件、URL 抓取、纯文本（与 Go resolveInput 一致）
+        // 解析 JD / 简历输入：支持 [FILE:] 文件、URL 抓取、纯文本
         jdText = resolveInput(jdText);
         resumeText = resolveInput(resumeText);
 
@@ -315,7 +315,6 @@ public class WebSocketHandler extends TextWebSocketHandler {
                 sendServerMsg(ws.conn, ServerMsg.builder()
                         .type("error").message("面试流程异常: " + e.getMessage()).build());
             } finally {
-                // 与 Go 版本一致：面试流程结束后（无论正常完成、用户终止或异常）都通知前端
                 sendServerMsg(ws.conn, ServerMsg.builder().type("interview_complete").build());
                 ws.interviewRunning = false;
             }
@@ -484,7 +483,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 格式化题库解析的校验失败详情（与 Go formatParseErrors 一致），无错误返回 null（NON_NULL 不序列化）
+     * 格式化题库解析的校验失败详情，无错误返回 null（NON_NULL 不序列化）
      */
     private String formatParseErrors(List<QuestionParser.ParseError> errs) {
         if (errs == null || errs.isEmpty()) return null;

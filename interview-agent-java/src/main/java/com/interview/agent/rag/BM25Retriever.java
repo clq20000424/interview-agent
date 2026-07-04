@@ -4,7 +4,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * BM25 关键词检索器（与 Go 版本一致）
+ * BM25 关键词检索器
  * - k1 = 1.5（控制词频饱和度）
  * - b = 0.75（控制文档长度归一化）
  *

@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 一次评估运行的完整报告，与 Go 版本 EvalReport 字段一致。
+ * 一次评估运行的完整报告。
  *
  * @author 陈龙强
  */

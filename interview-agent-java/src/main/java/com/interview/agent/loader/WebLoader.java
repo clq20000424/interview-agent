@@ -8,7 +8,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Component;
 
 /**
- * 网页内容加载器（与 Go 版本一致）
+ * 网页内容加载器
  * - 通过 HTTP 抓取网页
  * - 用 LLM 从网页内容中提取 JD 正文
  *

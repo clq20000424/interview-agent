@@ -27,9 +27,10 @@ public class InterviewState {
     @JsonProperty("total_questions")
     private int totalQuestions;
 
+    // easy/medium/hard
     @JsonProperty("current_difficulty")
     @Builder.Default
-    private String currentDifficulty = "medium"; // easy/medium/hard
+    private String currentDifficulty = "medium";
 
     @JsonProperty("consecutive_right")
     private int consecutiveRight;

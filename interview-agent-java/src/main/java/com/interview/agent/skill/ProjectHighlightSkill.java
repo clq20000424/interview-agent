@@ -1,15 +1,14 @@
 package com.interview.agent.skill;
 
-import com.interview.agent.agent.AgentUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 
-import java.util.*;
+import java.util.List;
 
 /**
- * 项目亮点提炼技能（与 Go 版本一致）
+ * 项目亮点提炼技能
  * - 三阶段：start → collecting → mock_interview
  * - STAR 法则重构 + 亮点提炼 + 模拟追问
  *
@@ -30,10 +29,14 @@ public class ProjectHighlightSkill implements Skill {
     }
 
     @Override
-    public String name() { return "project_highlight"; }
+    public String name() {
+        return "project_highlight";
+    }
 
     @Override
-    public String description() { return "项目亮点提炼：STAR 法则重构 + 模拟面试追问"; }
+    public String description() {
+        return "项目亮点提炼：STAR 法则重构 + 模拟面试追问";
+    }
 
     @Override
     public boolean match(String input) {
@@ -41,7 +44,6 @@ public class ProjectHighlightSkill implements Skill {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public SkillResponse handle(String input, SkillState state) {
         if (SkillUtils.isQuitCommand(input)) {
             return SkillResponse.builder().content("已退出项目亮点模式。").done(true).state(state).build();
@@ -82,11 +84,11 @@ public class ProjectHighlightSkill implements Skill {
 
         String content = String.format("""
                 %s
-
+                
                 ---
-
+                
                 接下来模拟面试官追问环节（共 3 轮）：
-
+                
                 **面试官追问 1：** %s""", analysis, mockQuestion);
 
         return SkillResponse.builder()
@@ -114,9 +116,9 @@ public class ProjectHighlightSkill implements Skill {
         if (mockRound >= 3) {
             String content = String.format("""
                     %s
-
+                    
                     ---
-
+                    
                     ✅ 模拟追问完成！你已经对这个项目的面试表达有了更好的准备。
                     建议多练习几次，直到回答自然流畅。""", evaluation);
 
@@ -140,9 +142,9 @@ public class ProjectHighlightSkill implements Skill {
     private String analyzeProject(String projectDesc) {
         String prompt = String.format("""
                 请用 STAR 法则分析以下项目经历，并提炼亮点：
-
+                
                 项目描述：%s
-
+                
                 请输出：
                 1. **STAR 重构**（Situation / Task / Action / Result 四段式）
                 2. **核心亮点**（3 个最值得强调的技术亮点）
@@ -160,14 +162,14 @@ public class ProjectHighlightSkill implements Skill {
     private String generateMockQuestion(String projectDesc, int round) {
         String prompt = String.format("""
                 你是技术面试官。基于以下项目描述，生成第 %d 个追问问题。
-
+                
                 项目描述：%s
-
+                
                 要求：
                 - 第 1 个追问偏技术细节（如架构设计、性能优化）
                 - 第 2 个追问偏挑战和解决方案（如遇到的坑、trade-off）
                 - 第 3 个追问偏反思和成长（如复盘、改进）
-
+                
                 只输出一个追问问题，不要输出其他内容。""", round + 1, projectDesc);
 
         try {
@@ -181,11 +183,11 @@ public class ProjectHighlightSkill implements Skill {
     private String evaluateMockAnswer(String question, String answer, String projectContext) {
         String prompt = String.format("""
                 你是技术面试官。请评价候选人对以下追问的回答：
-
+                
                 追问：%s
                 候选人回答：%s
                 项目背景：%s
-
+                
                 请给出：
                 1. 回答评分（优秀/良好/一般/需改进）
                 2. 优点

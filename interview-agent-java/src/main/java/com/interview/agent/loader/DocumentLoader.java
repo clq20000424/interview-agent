@@ -9,7 +9,7 @@ import java.nio.file.Path;
 import java.util.Base64;
 
 /**
- * 文档加载器：根据文件扩展名自动选择解析器（与 Go 版本一致）
+ * 文档加载器：根据文件扩展名自动选择解析器
  * 支持 PDF / TXT / DOCX / Markdown
  *
  * @author 陈龙强

@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * WebSocket 客户端消息，JSON 字段与 Go 版本完全一致。
+ * WebSocket 客户端消息。
  *
  * @author 陈龙强
  */
@@ -15,10 +15,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ClientMsg {
-    private String type;        // chat / start_interview / answer / upload_questions / quit_interview
+    // chat / start_interview / answer / upload_questions / quit_interview
+    private String type;
     private String content;
     private String jd;
     private String resume;
     private String filename;
-    private String data;        // base64 编码的文件内容
+    // base64 编码的文件内容
+    private String data;
 }

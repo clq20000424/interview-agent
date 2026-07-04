@@ -143,7 +143,7 @@ public class ReviewPlanner {
     }
 
     /**
-     * 格式化复习计划为 Markdown（与 Go 版本 FormatReviewPlan 对齐）
+     * 格式化复习计划为 Markdown
      */
     public static String formatReviewPlan(ReviewPlan plan) {
         StringBuilder sb = new StringBuilder();

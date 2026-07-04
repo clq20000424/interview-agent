@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * 一条评估样本（评估数据集中的一行），与 Go 版本 EvalSample 字段一致。
+ * 一条评估样本（评估数据集中的一行）。
  *
  * 用法：人工标注（或 gen-dataset 自动生成）后写入 data/eval/dataset_v1.json，
  * 由 {@link RetrievalEvaluator} 读取使用。

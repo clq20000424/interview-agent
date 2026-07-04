@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * 单条样本的评估结果，与 Go 版本 SampleResult 字段一致。
+ * 单条样本的评估结果。
  *
  * @author 陈龙强
  */

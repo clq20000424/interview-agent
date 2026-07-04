@@ -4,11 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.agent.model.JDAnalysis;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -26,9 +26,9 @@ public class JDAnalyzer {
 
     private static final String JD_ANALYZER_PROMPT = """
             你是一个专业的 JD（职位描述）分析专家。请仔细分析以下职位描述，提取关键信息。
-
+            
             请按照以下 JSON 格式输出分析结果（不要输出其他内容，只输出纯 JSON）：
-
+            
             {
               "position": "岗位名称",
               "company": "公司名称（如果JD中有提及）",
@@ -42,7 +42,7 @@ public class JDAnalyzer {
               "responsibilities": ["职责1", "职责2"],
               "key_topics": ["面试重点方向1", "面试重点方向2"]
             }
-
+            
             注意：
             1. required_skills 是 JD 中明确要求的必须技能
             2. preferred_skills 是"加分项"或"优先考虑"的技能

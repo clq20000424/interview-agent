@@ -7,7 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 指标汇总（用于整体 / 按 topic / 按 difficulty 分组），与 Go 版本 MetricsSummary 一致。
+ * 指标汇总（用于整体 / 按 topic / 按 difficulty 分组）。
  *
  * @author 陈龙强
  */

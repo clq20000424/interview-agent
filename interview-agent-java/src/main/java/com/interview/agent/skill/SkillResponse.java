@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Skill 单轮交互的响应（与 Go 版本一致）
+ * Skill 单轮交互的响应
  *
  * @author 陈龙强
  */

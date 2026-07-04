@@ -2,7 +2,6 @@ package com.interview.agent.skill;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.interview.agent.agent.AgentUtils;
 import com.interview.agent.rag.BM25Manager;
 import com.interview.agent.rag.MilvusStore;
 import com.interview.agent.rag.RagDocument;
@@ -11,10 +10,10 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 
-import java.util.*;
+import java.util.List;
 
 /**
- * 概念精讲技能（与 Go 版本一致）
+ * 概念精讲技能
  * - 将知识点拆解为多个关键点
  * - 逐个讲解，结合 RAG 知识库
  * - 三阶段：start → teaching → conclusion
@@ -41,10 +40,14 @@ public class ConceptTutorSkill implements Skill {
     }
 
     @Override
-    public String name() { return "concept_tutor"; }
+    public String name() {
+        return "concept_tutor";
+    }
 
     @Override
-    public String description() { return "概念精讲：将知识点拆解为关键要点逐个讲解"; }
+    public String description() {
+        return "概念精讲：将知识点拆解为关键要点逐个讲解";
+    }
 
     @Override
     public boolean match(String input) {
@@ -124,12 +127,12 @@ public class ConceptTutorSkill implements Skill {
             if (currentIdx >= keyPoints.size()) {
                 // 所有要点讲完，总结
                 String summary = String.format("""
-                        ✅ **%s** 的所有关键要点已讲完！
-
-                        回顾一下：
-                        %s
-
-                        如果还有疑问，可以继续提问。""",
+                                ✅ **%s** 的所有关键要点已讲完！
+                                
+                                回顾一下：
+                                %s
+                                
+                                如果还有疑问，可以继续提问。""",
                         topic,
                         buildPointsList(keyPoints));
                 return SkillResponse.builder().content(summary).done(true).state(state).build();
@@ -164,13 +167,13 @@ public class ConceptTutorSkill implements Skill {
 
     private List<String> decomposeKeyPoints(String topic, String ragContext) {
         String prompt = String.format("""
-                请将「%s」这个知识点拆解为 3-5 个关键要点。
-
-                %s
-
-                请输出 JSON 数组格式，每个元素是一个要点的标题（简短）：
-                ["要点1", "要点2", "要点3"]
-                只输出 JSON 数组。""",
+                        请将「%s」这个知识点拆解为 3-5 个关键要点。
+                        
+                        %s
+                        
+                        请输出 JSON 数组格式，每个元素是一个要点的标题（简短）：
+                        ["要点1", "要点2", "要点3"]
+                        只输出 JSON 数组。""",
                 topic,
                 ragContext.isEmpty() ? "" : "参考资料：\n" + ragContext);
 
@@ -182,7 +185,8 @@ public class ConceptTutorSkill implements Skill {
             if (start >= 0 && end > start) {
                 json = json.substring(start, end + 1);
             }
-            return objectMapper.readValue(json, new TypeReference<>() {});
+            return objectMapper.readValue(json, new TypeReference<>() {
+            });
         } catch (Exception e) {
             log.warn("[ConceptTutor] 拆解要点失败: {}", e.getMessage());
             return List.of(topic);
@@ -191,13 +195,13 @@ public class ConceptTutorSkill implements Skill {
 
     private String explainPoint(String topic, String point, String ragContext) {
         String prompt = String.format("""
-                请详细讲解「%s」中的「%s」这个要点。
-
-                要求：
-                1. 用通俗易懂的语言讲解
-                2. 如果合适，用类比帮助理解
-                3. 给出关键结论
-                %s""",
+                        请详细讲解「%s」中的「%s」这个要点。
+                        
+                        要求：
+                        1. 用通俗易懂的语言讲解
+                        2. 如果合适，用类比帮助理解
+                        3. 给出关键结论
+                        %s""",
                 topic, point,
                 ragContext.isEmpty() ? "" : "\n参考资料：\n" + ragContext);
 
@@ -211,9 +215,9 @@ public class ConceptTutorSkill implements Skill {
 
     private String answerQuestion(String topic, String currentPoint, String question, String ragContext) {
         String prompt = String.format("""
-                用户在学习「%s」的「%s」时提了一个问题：%s
-
-                请针对性地回答。%s""",
+                        用户在学习「%s」的「%s」时提了一个问题：%s
+                        
+                        请针对性地回答。%s""",
                 topic, currentPoint, question,
                 ragContext.isEmpty() ? "" : "\n参考资料：\n" + ragContext);
 

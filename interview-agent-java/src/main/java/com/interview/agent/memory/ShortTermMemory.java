@@ -10,14 +10,14 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 短期记忆：对话上下文滑动窗口（与 Go 版本一致，默认 20 条消息）
+ * 短期记忆：对话上下文滑动窗口
  *
  * @author 陈龙强
  */
 @Component
 public class ShortTermMemory {
 
-    /** 滑动窗口大小：20 条消息，与 Go 版本一致 */
+    /** 滑动窗口大小：20 条消息 */
     private static final int DEFAULT_MAX_LEN = 20;
 
     private final int maxLen;

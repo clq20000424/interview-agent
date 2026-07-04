@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * manifest.json 中每条题目的结构，与 Go 版本 manifestEntry 一致。
+ * manifest.json 中每条题目的结构。
  *
  * content 存完整题目文本（BM25 索引需要），contentPreview 存截断摘要（方便人看）。
  *

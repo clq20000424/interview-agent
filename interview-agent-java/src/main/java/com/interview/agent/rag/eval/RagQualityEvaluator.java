@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 基于 LLM 的 RAG 质量评估器（与 Go 版本 rag/evaluation.go 一致）。
+ * 基于 LLM 的 RAG 质量评估器。
  *
  * 提供两类在线评估能力：
  * 1. {@link #evaluate} —— 三维质量评估：忠实度 / 相关性 / 完整性

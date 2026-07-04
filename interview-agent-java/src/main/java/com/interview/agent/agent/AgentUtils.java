@@ -10,7 +10,6 @@ public class AgentUtils {
     /**
      * 从 LLM 响应文本中提取 JSON 内容。
      * 处理 markdown 代码块包裹的情况，提取第一个 { 到最后一个 } 之间的内容。
-     * 与 Go 版本 extractJSON() 逻辑完全一致。
      */
     public static String extractJSON(String text) {
         if (text == null || text.isEmpty()) {

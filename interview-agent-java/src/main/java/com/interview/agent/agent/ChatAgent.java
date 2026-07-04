@@ -26,7 +26,7 @@ public class ChatAgent {
     private final ChatModel chatModel;
 
     /**
-     * 聊天历史上限：20 条消息（10 轮对话），与 Go 版本一致
+     * 聊天历史上限：20 条消息（10 轮对话）。
      */
     private static final int MAX_HISTORY_SIZE = 20;
 

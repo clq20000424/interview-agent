@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * 组合存储：Redis 缓存 + MySQL 持久化（与 Go 版本一致）
+ * 组合存储：Redis 缓存 + MySQL 持久化
  * - 写入：先写 MySQL（持久化），再写 Redis（缓存，失败不影响主流程）
  * - 读取：先读 Redis，miss 则读 MySQL 并回填 Redis
  *
@@ -16,7 +16,9 @@ import java.time.Duration;
 @Component
 public class CombinedStore {
 
-    /** Session 回填到 Redis 的 TTL */
+    /**
+     * Session 回填到 Redis 的 TTL
+     */
     private static final Duration SESSION_BACKFILL_TTL = Duration.ofHours(2);
 
     private final RedisStore redisStore;

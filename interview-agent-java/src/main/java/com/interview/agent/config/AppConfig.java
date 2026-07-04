@@ -19,14 +19,28 @@ public class AppConfig {
 
     @Data
     public static class MilvusProperties {
+        /**
+         * 域名
+         */
         private String host = "localhost";
+
+        /**
+         * 端口号
+         */
         private int port = 19530;
     }
 
     @Data
     public static class JwtProperties {
+        /**
+         * jwt 密钥
+         */
         private String secret = "interview-agent-default-secret";
-        private long expiration = 86400000; // 24 hours
+
+        /**
+         * 24 hours 过期
+         */
+        private long expiration = 86400000;
     }
 
     @Data

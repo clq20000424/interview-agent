@@ -1,7 +1,7 @@
 package com.interview.agent.skill;
 
 /**
- * Skill 技能接口（与 Go 版本一致）
+ * Skill 技能接口
  * Skill 是介于 Tool（MCP 无状态工具）和 Agent（DAG 预编排流程）之间的能力层级：
  * 有状态、多轮交互、用户意图动态触发、可插拔
  *

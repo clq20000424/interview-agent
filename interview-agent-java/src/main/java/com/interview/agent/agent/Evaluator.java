@@ -114,7 +114,7 @@ public class Evaluator {
     }
 
     /**
-     * 格式化评估报告为 Markdown（与 Go 版本 FormatReport 对齐）
+     * 格式化评估报告为 Markdown
      */
     public static String formatReport(EvaluationReport report) {
         StringBuilder sb = new StringBuilder();

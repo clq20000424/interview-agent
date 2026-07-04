@@ -1,27 +1,28 @@
 package com.interview.agent.rag;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.interview.agent.config.AppConfig;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.DataType;
 import io.milvus.v2.common.IndexParam;
-import io.milvus.v2.service.collection.request.*;
-import io.milvus.v2.service.vector.request.*;
-import io.milvus.v2.service.vector.response.*;
+import io.milvus.v2.service.collection.request.AddFieldReq;
+import io.milvus.v2.service.collection.request.CreateCollectionReq;
+import io.milvus.v2.service.collection.request.HasCollectionReq;
+import io.milvus.v2.service.collection.request.LoadCollectionReq;
+import io.milvus.v2.service.vector.request.DeleteReq;
+import io.milvus.v2.service.vector.request.InsertReq;
+import io.milvus.v2.service.vector.request.SearchReq;
+import io.milvus.v2.service.vector.response.SearchResp;
+import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Milvus 向量存储（与 Go 版本一致）
+ * Milvus 向量存储
  * - 集合名：interview_questions
  * - 向量维度：1024（text-embedding-v3）
  * - 支持按用户隔离检索、按来源文件删除
@@ -257,7 +258,8 @@ public class MilvusStore {
                             doc.setMetadata(meta);
                         } else {
                             doc.setMetadata(objectMapper.readValue(metaObj.toString(),
-                                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}));
+                                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+                                    }));
                         }
                     } catch (Exception e) {
                         log.warn("[Milvus] 解析 metadata 失败: {}", e.getMessage());

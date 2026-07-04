@@ -8,10 +8,10 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 
-import java.util.*;
+import java.util.List;
 
 /**
- * 技术对比技能（与 Go 版本一致）
+ * 技术对比技能
  * - 两阶段：start → advising
  * - 表格对比 + 选型建议 + 面试话术
  *
@@ -36,10 +36,14 @@ public class TechCompareSkill implements Skill {
     }
 
     @Override
-    public String name() { return "tech_compare"; }
+    public String name() {
+        return "tech_compare";
+    }
 
     @Override
-    public String description() { return "技术对比：表格对比 + 选型建议 + 面试话术"; }
+    public String description() {
+        return "技术对比：表格对比 + 选型建议 + 面试话术";
+    }
 
     @Override
     public boolean match(String input) {
@@ -68,15 +72,15 @@ public class TechCompareSkill implements Skill {
         String ragContext = fetchRAGContext(state.getUserId(), input);
 
         String prompt = String.format("""
-                请对以下技术进行全面对比分析：
-
-                用户问题：%s
-
-                请输出三个部分：
-                1. **对比表格**（Markdown 表格格式，从多个维度对比）
-                2. **选型建议**（不同场景下推荐的选择）
-                3. **面试话术**（面试中如何回答这类对比题，给出参考回答）
-                %s""",
+                        请对以下技术进行全面对比分析：
+                        
+                        用户问题：%s
+                        
+                        请输出三个部分：
+                        1. **对比表格**（Markdown 表格格式，从多个维度对比）
+                        2. **选型建议**（不同场景下推荐的选择）
+                        3. **面试话术**（面试中如何回答这类对比题，给出参考回答）
+                        %s""",
                 input,
                 ragContext.isEmpty() ? "" : "\n参考资料：\n" + ragContext);
 
@@ -105,7 +109,7 @@ public class TechCompareSkill implements Skill {
         String prompt = String.format("""
                 用户在对比「%s」后，描述了自己的具体场景：
                 %s
-
+                
                 请给出针对性的选型推荐，说明理由。""", topic, input);
 
         try {

@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * 长期记忆：管理用户画像和面试历史（与 Go 版本一致）
+ * 长期记忆：管理用户画像和面试历史
  * - 薄弱点超过 30 天自动淘汰
  * - 出题时只取最弱的 Top 10
  * - 得分 < 60 记录为薄弱点，得分 >= 80 移除薄弱点
