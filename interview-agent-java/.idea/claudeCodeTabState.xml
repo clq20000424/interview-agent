@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ClaudeCodeTabState">
+    <option name="tabSessions">
+      <map>
+        <entry key="0">
+          <value>
+            <TabSessionState>
+              <option name="provider" value="codex" />
+              <option name="sessionId" value="019f27ac-907b-7ed3-8a0f-e0289ba59a41" />
+              <option name="cwd" value="$PROJECT_DIR$" />
+              <option name="model" value="gpt-5.5" />
+              <option name="permissionMode" value="bypassPermissions" />
+            </TabSessionState>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>

@@ -1,0 +1,62 @@
+server:
+  port: 9090
+
+spring:
+  application:
+    name: interview-agent
+
+  # DashScope LLM Configuration
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY}
+      # 注：此属性在 Spring AI Alibaba 1.1.2.0 未真正绑定生效，实际 HTTP 超时由
+      # RagHttpClientAutoConfig 的自定义 RestClientCustomizer 控制（默认 600s，可用
+      # 环境变量 DASHSCOPE_READ_TIMEOUT 覆盖）
+      read-timeout: 600
+      chat:
+        options:
+          model: ${LLM_MODEL:qwen-plus}
+      embedding:
+        options:
+          model: ${EMBEDDING_MODEL:text-embedding-v3}
+
+  # Redis
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+
+  # MySQL / JPA
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/interview_agent?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:interview}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+
+# Application Custom Config
+app:
+  milvus:
+    host: ${MILVUS_HOST:localhost}
+    port: ${MILVUS_PORT:19530}
+  jwt:
+    secret: ${JWT_SECRET:interview-agent-default-secret}
+    expiration: 86400000  # 24 hours
+  github:
+    token: ${GITHUB_TOKEN:}
+  auth:
+    enabled: ${AUTH_ENABLED:true}
+  rag:
+    reranker:
+      # 重排策略：cross-encoder（DashScope gte-rerank 专用重排模型，默认，主流程出题用）| llm（大模型语义重排）| none（不重排）
+      type: ${RERANKER_TYPE:cross-encoder}
+      # cross-encoder 使用的 DashScope 重排模型；gte-rerank-v2 为当前可用版本
+      cross-encoder-model: ${RERANK_MODEL:gte-rerank-v2}

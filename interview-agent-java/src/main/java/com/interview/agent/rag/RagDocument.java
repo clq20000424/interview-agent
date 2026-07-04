@@ -1,0 +1,26 @@
+package com.interview.agent.rag;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.Map;
+
+/**
+ * RAG 文档（统一的文档表示）
+ *
+ * @author 陈龙强
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RagDocument {
+    private String id;
+    private String content;
+    private Map<String, Object> metadata;
+    private String userId;
+    private String sourceFile;
+    private float score;
+}
