@@ -20,6 +20,7 @@ import com.interview.agent.rag.MilvusStore;
 import com.interview.agent.rag.RagDocument;
 import com.interview.agent.skill.*;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -131,8 +132,22 @@ public class WebSocketHandler extends TextWebSocketHandler {
         if (!token.isEmpty()) {
             try {
                 userID = jwtService.validateToken(token);
+            } catch (JwtService.TokenExpiredException e) {
+                log.warn("[WS] token 已过期: {}", e.getMessage());
+                sendServerMsg(session, ServerMsg.builder()
+                        .type("error")
+                        .message("Token 已过期，请重新登录")
+                        .build());
+                closeSession(session, "token_expired");
+                return;
             } catch (Exception e) {
                 log.warn("[WS] token 验证失败: {}", e.getMessage());
+                sendServerMsg(session, ServerMsg.builder()
+                        .type("error")
+                        .message("Token 无效，请重新登录")
+                        .build());
+                closeSession(session, "token_invalid");
+                return;
             }
         }
 
@@ -145,14 +160,27 @@ public class WebSocketHandler extends TextWebSocketHandler {
         sendServerMsg(session, ServerMsg.builder().type("connected").content("连接成功").build());
     }
 
+    /**
+     * 关闭 WebSocket 会话
+     */
+    private void closeSession(WebSocketSession session, String reason) {
+        try {
+            if (session.isOpen()) {
+                session.close(CloseStatus.POLICY_VIOLATION.withReason(reason));
+            }
+        } catch (Exception e) {
+            log.error("[WS] 关闭会话失败: {}", e.getMessage());
+        }
+    }
+
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+    public void afterConnectionClosed(WebSocketSession session, @NotNull CloseStatus status) {
         sessions.remove(session.getId());
         log.info("[WS] 连接关闭 (sessionId={})", session.getId());
     }
 
     @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) {
+    protected void handleTextMessage(WebSocketSession session, @NotNull TextMessage message) {
         WSSession ws = sessions.get(session.getId());
         if (ws == null) return;
 

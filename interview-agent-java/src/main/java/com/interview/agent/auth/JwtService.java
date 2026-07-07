@@ -2,6 +2,7 @@ package com.interview.agent.auth;
 
 import com.interview.agent.config.AppConfig;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
@@ -94,8 +95,19 @@ public class JwtService {
                     .parseSignedClaims(token)
                     .getPayload();
             return claims.getSubject();
+        } catch (ExpiredJwtException e) {
+            throw new TokenExpiredException("Token 已过期");
         } catch (Exception e) {
             throw new RuntimeException("Token 无效: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Token 过期异常
+     */
+    public static class TokenExpiredException extends RuntimeException {
+        public TokenExpiredException(String message) {
+            super(message);
         }
     }
 }

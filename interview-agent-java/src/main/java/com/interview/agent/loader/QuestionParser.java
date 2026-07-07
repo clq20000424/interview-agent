@@ -13,10 +13,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -33,8 +30,7 @@ public class QuestionParser {
     // 单段最大字符数：Go 版用 25000（其 HTTP 客户端无超时、可硬扛），但 qwen-plus 对超大单段
     // 会生成超长 JSON（单次 >10 分钟），在有超时的 Java 客户端下必然超时。调小到 8000 后每段题目
     // 更少、LLM 输出更短（单次几十秒），解析结果一致、只是分更多段。可用环境变量覆盖。
-    private static final int MAX_SEGMENT_LEN =
-            Integer.parseInt(System.getenv().getOrDefault("QUESTION_SEGMENT_LEN", "8000"));
+    private static final int MAX_SEGMENT_LEN = Integer.parseInt(System.getenv().getOrDefault("QUESTION_SEGMENT_LEN", "8000"));
     private static final Set<String> VALID_DIFFICULTIES = Set.of("easy", "medium", "hard");
     private static final Set<String> VALID_TYPES = Set.of("basic", "project", "design", "algorithm");
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -168,8 +164,17 @@ public class QuestionParser {
      */
     private List<ParsedQuestion> parseSegment(String text) {
         String prompt = String.format(QUESTION_PARSER_PROMPT, text);
-        ChatResponse response = chatModel.call(new Prompt(prompt));
-        String content = extractJSONArray(response.getResult().getOutput().getText());
+        ChatResponse response;
+        try {
+            response = chatModel.call(new Prompt(prompt));
+        } catch (Exception e) {
+            Throwable root = e;
+            while (root.getCause() != null) root = root.getCause();
+            log.error("[QuestionParser] DashScope 调用失败 — root cause: {}", root.getMessage(), e);
+            throw e;
+        }
+
+        String content = extractJSONArray(Objects.requireNonNull(response.getResult().getOutput().getText()));
 
         try {
             return objectMapper.readValue(content, new TypeReference<>() {
@@ -321,14 +326,14 @@ public class QuestionParser {
         List<String> segments = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         for (String b : blocks) {
-            if (current.length() > 0 && current.length() + b.length() + 2 > maxLen) {
+            if (!current.isEmpty() && current.length() + b.length() + 2 > maxLen) {
                 segments.add(current.toString());
                 current = new StringBuilder();
             }
-            if (current.length() > 0) current.append("\n\n");
+            if (!current.isEmpty()) current.append("\n\n");
             current.append(b);
         }
-        if (current.length() > 0) {
+        if (!current.isEmpty()) {
             segments.add(current.toString());
         }
         if (segments.isEmpty() && !text.isEmpty()) {
@@ -349,21 +354,21 @@ public class QuestionParser {
             p = p.trim();
             if (p.isEmpty()) continue;
 
-            if (current.length() > 0 && current.length() + p.length() + 2 > maxLen) {
+            if (!current.isEmpty() && current.length() + p.length() + 2 > maxLen) {
                 segments.add(current.toString());
                 current = new StringBuilder();
             }
 
-            if (current.length() == 0 && p.length() > maxLen) {
+            if (current.isEmpty() && p.length() > maxLen) {
                 segments.add(p);
                 continue;
             }
 
-            if (current.length() > 0) current.append("\n\n");
+            if (!current.isEmpty()) current.append("\n\n");
             current.append(p);
         }
 
-        if (current.length() > 0) {
+        if (!current.isEmpty()) {
             segments.add(current.toString());
         }
         if (segments.isEmpty() && !text.isEmpty()) {

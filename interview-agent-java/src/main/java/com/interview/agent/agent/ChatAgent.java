@@ -70,7 +70,14 @@ public class ChatAgent {
 
         messages.add(new UserMessage(userInput));
 
-        ChatResponse response = chatModel.call(new Prompt(messages));
-        return response.getResult().getOutput().getText();
+        try {
+            ChatResponse response = chatModel.call(new Prompt(messages));
+            return response.getResult().getOutput().getText();
+        } catch (Exception e) {
+            Throwable root = e;
+            while (root.getCause() != null) root = root.getCause();
+            log.error("[ChatAgent] DashScope 调用失败 — root cause: {}", root.getMessage(), e);
+            throw e;
+        }
     }
 }
