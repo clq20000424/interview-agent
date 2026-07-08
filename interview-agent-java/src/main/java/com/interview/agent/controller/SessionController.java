@@ -1,0 +1,304 @@
+package com.interview.agent.controller;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.interview.agent.model.ConversationMessage;
+import com.interview.agent.model.EvaluationReport;
+import com.interview.agent.model.JDAnalysis;
+import com.interview.agent.model.Session;
+import com.interview.agent.repository.SessionRepository;
+import com.interview.agent.service.SessionCacheService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 会话管理 Controller
+ * - GET /api/sessions: 获取当前用户的所有会话列表
+ * - GET /api/sessions/{id}: 获取指定会话详情
+ * - PATCH /api/sessions/{id}/title: 修改会话标题
+ * - PATCH /api/sessions/{id}/pin: 修改会话置顶状态
+ * - DELETE /api/sessions/{id}: 删除指定会话
+ *
+ * @author 陈龙强
+ */
+@Slf4j
+@RestController
+@RequestMapping("/api/sessions")
+@RequiredArgsConstructor
+public class SessionController {
+
+    private final SessionRepository sessionRepository;
+    private final SessionCacheService sessionCacheService;
+
+    /**
+     * 获取当前用户的所有会话列表
+     */
+    @GetMapping
+    public ResponseEntity<List<SessionSummary>> getSessions(@RequestAttribute("username") String username) {
+        try {
+            List<Session> sessions = sessionRepository.findByUserIdOrderByPinnedAndUpdatedDesc(username);
+            return ResponseEntity.ok(sessions.stream().map(SessionController::toSummary).toList());
+        } catch (Exception e) {
+            log.error("[Session] 获取会话列表失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 获取指定会话详情
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getSession(@PathVariable String id, @RequestAttribute("username") String username) {
+        try {
+            Session session = sessionRepository.findById(id).orElse(null);
+            if (session == null) {
+                return ResponseEntity.status(404).body(Map.of("error", "会话不存在"));
+            }
+
+            // 验证会话属于当前用户
+            if (!session.getUserId().equals(username)) {
+                return ResponseEntity.status(403).body(Map.of("error", "无权访问该会话"));
+            }
+
+            return ResponseEntity.ok(session);
+        } catch (Exception e) {
+            log.error("[Session] 获取会话详情失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "获取会话详情失败"));
+        }
+    }
+
+    /**
+     * 修改指定会话的标题
+     */
+    @PatchMapping("/{id}/title")
+    public ResponseEntity<?> renameSession(@PathVariable String id,
+                                           @RequestBody RenameSessionRequest request,
+                                           @RequestAttribute("username") String username) {
+        try {
+            Session session = getOwnedSession(id, username);
+            if (session == null) {
+                return ResponseEntity.status(404).body(Map.of("error", "会话不存在"));
+            }
+
+            String title = request.title() == null ? "" : request.title().trim();
+            if (title.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "会话名称不能为空"));
+            }
+            if (title.length() > 200) {
+                return ResponseEntity.badRequest().body(Map.of("error", "会话名称不能超过 200 个字符"));
+            }
+
+            session.setTitle(title);
+            Session saved = sessionRepository.save(session);
+            log.info("[Session] 用户 {} 修改会话名称: sessionId={}", username, id);
+            return ResponseEntity.ok(toSummary(saved));
+        } catch (IllegalAccessException e) {
+            return ResponseEntity.status(403).body(Map.of("error", "无权修改该会话"));
+        } catch (Exception e) {
+            log.error("[Session] 修改会话名称失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "修改会话名称失败"));
+        }
+    }
+
+    /**
+     * 修改指定会话的置顶状态
+     */
+    @PatchMapping("/{id}/pin")
+    public ResponseEntity<?> updatePinned(@PathVariable String id,
+                                          @RequestBody PinSessionRequest request,
+                                          @RequestAttribute("username") String username) {
+        try {
+            Session session = getOwnedSession(id, username);
+            if (session == null) {
+                return ResponseEntity.status(404).body(Map.of("error", "会话不存在"));
+            }
+
+            boolean pinned = Boolean.TRUE.equals(request.pinned());
+            session.setPinned(pinned);
+            session.setPinnedAt(pinned ? LocalDateTime.now() : null);
+            Session saved = sessionRepository.save(session);
+            log.info("[Session] 用户 {} {}会话: sessionId={}", username, pinned ? "置顶" : "取消置顶", id);
+            return ResponseEntity.ok(toSummary(saved));
+        } catch (IllegalAccessException e) {
+            return ResponseEntity.status(403).body(Map.of("error", "无权修改该会话"));
+        } catch (Exception e) {
+            log.error("[Session] 修改会话置顶状态失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "修改会话置顶状态失败"));
+        }
+    }
+
+    /**
+     * 删除指定会话
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteSession(@PathVariable String id, @RequestAttribute("username") String username) {
+        try {
+            Session session = sessionRepository.findById(id).orElse(null);
+            if (session == null) {
+                return ResponseEntity.status(404).body(Map.of("error", "会话不存在"));
+            }
+
+            // 验证会话属于当前用户
+            if (!session.getUserId().equals(username)) {
+                return ResponseEntity.status(403).body(Map.of("error", "无权删除该会话"));
+            }
+
+            sessionRepository.delete(session);
+            log.info("[Session] 用户 {} 删除了会话 {}", username, id);
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            log.error("[Session] 删除会话失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "删除会话失败"));
+        }
+    }
+
+    /**
+     * 检查是否有进行中的面试会话（从 Redis 缓存中）
+     * <p>
+     * 用于页面刷新时恢复会话。前端在 App.tsx 的 useEffect 中调用此接口，
+     * 如果返回 has_cached=true，则自动恢复缓存的消息并提示用户继续面试。
+     * </p>
+     * <p>
+     * 响应格式：
+     * - 有缓存：{ "has_cached": true, "session": {...}, "cached_messages": [...] }
+     * - 无缓存：{ "has_cached": false }
+     * </p>
+     *
+     * @param username 当前登录用户名（从 JWT 解析后注入）
+     * @return 活跃会话信息及缓存消息
+     */
+    @GetMapping("/active")
+    public ResponseEntity<?> getActiveSession(@RequestAttribute("username") String username) {
+        try {
+            // 查找状态为 interviewing 的会话（即正在进行中的面试）
+            List<Session> sessions = sessionRepository.findByUserIdAndStatus(username, "interviewing");
+            if (!sessions.isEmpty()) {
+                Session activeSession = sessions.get(0);
+                // 检查 Redis 中是否有该会话的缓存消息
+                boolean hasCachedMessages = sessionCacheService.hasCachedMessages(username, activeSession.getId());
+                if (hasCachedMessages) {
+                    // 从 Redis 读取所有缓存消息，与会话信息一起返回给前端
+                    return ResponseEntity.ok(buildCachedSessionResponse(username, activeSession, true));
+                }
+            }
+
+            // 兜底：如果进行中会话索引还没写入 MySQL，但 Redis 已经有缓存，也允许从 Redis 恢复页面。
+            List<String> cachedSessionIds = sessionCacheService.getCachedSessionIds(username);
+            if (!cachedSessionIds.isEmpty()) {
+                String sessionId = cachedSessionIds.get(0);
+                Session cachedSession = sessionRepository.findById(sessionId)
+                        .filter(session -> username.equals(session.getUserId()))
+                        .orElseGet(() -> buildCachedOnlySession(username, sessionId));
+                return ResponseEntity.ok(buildCachedSessionResponse(username, cachedSession, false));
+            }
+            // 没有进行中的面试或没有缓存消息
+            return ResponseEntity.ok(Map.of("has_cached", false));
+        } catch (Exception e) {
+            log.error("[Session] 检查活跃会话失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "检查活跃会话失败"));
+        }
+    }
+
+    private Map<String, Object> buildCachedSessionResponse(String username, Session session, boolean mysqlSessionExists) {
+        List<ConversationMessage> cachedMessages = sessionCacheService.getMessages(username, session.getId());
+        return Map.of(
+                "session", toSummary(session),
+                "cached_messages", cachedMessages,
+                "has_cached", true,
+                "cache_message_count", cachedMessages.size(),
+                "mysql_session_exists", mysqlSessionExists,
+                "persisted_to_mysql", false
+        );
+    }
+
+    private Session buildCachedOnlySession(String username, String sessionId) {
+        LocalDateTime now = LocalDateTime.now();
+        return Session.builder()
+                .id(sessionId)
+                .title("进行中的面试")
+                .sessionType(Session.TYPE_INTERVIEW)
+                .userId(username)
+                .status(Session.STATUS_INTERVIEWING)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+    }
+
+    private Session getOwnedSession(String id, String username) throws IllegalAccessException {
+        Session session = sessionRepository.findById(id).orElse(null);
+        if (session == null) {
+            return null;
+        }
+        if (!session.getUserId().equals(username)) {
+            throw new IllegalAccessException();
+        }
+        return session;
+    }
+
+    private static SessionSummary toSummary(Session session) {
+        return new SessionSummary(
+                session.getId(),
+                session.getTitle(),
+                session.getSessionType(),
+                session.getUserId(),
+                session.getStatus(),
+                Boolean.TRUE.equals(session.getPinned()),
+                session.getPinnedAt(),
+                session.getCreatedAt(),
+                session.getUpdatedAt(),
+                toJdSummary(session.getJdAnalysis()),
+                toReportSummary(session.getReport())
+        );
+    }
+
+    private static JdAnalysisSummary toJdSummary(JDAnalysis jdAnalysis) {
+        if (jdAnalysis == null) {
+            return null;
+        }
+        return new JdAnalysisSummary(jdAnalysis.getPosition(), jdAnalysis.getExperienceLevel());
+    }
+
+    private static ReportSummary toReportSummary(EvaluationReport report) {
+        if (report == null) {
+            return null;
+        }
+        return new ReportSummary(report.getOverallScore());
+    }
+
+    public record SessionSummary(
+            String id,
+            String title,
+            @JsonProperty("session_type") String sessionType,
+            @JsonProperty("user_id") String userId,
+            String status,
+            Boolean pinned,
+            @JsonProperty("pinned_at") LocalDateTime pinnedAt,
+            @JsonProperty("created_at") LocalDateTime createdAt,
+            @JsonProperty("updated_at") LocalDateTime updatedAt,
+            @JsonProperty("jd_analysis") JdAnalysisSummary jdAnalysis,
+            ReportSummary report
+    ) {
+    }
+
+    public record JdAnalysisSummary(
+            String position,
+            @JsonProperty("experience_level") String experienceLevel
+    ) {
+    }
+
+    public record ReportSummary(
+            @JsonProperty("overall_score") double overallScore
+    ) {
+    }
+
+    public record RenameSessionRequest(String title) {
+    }
+
+    public record PinSessionRequest(Boolean pinned) {
+    }
+}

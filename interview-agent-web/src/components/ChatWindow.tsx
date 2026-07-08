@@ -15,7 +15,7 @@ interface ChatWindowProps {
 }
 
 export function ChatWindow({ wsRef }: ChatWindowProps) {
-  const { messages, isInterviewing } = useChatStore()
+  const { messages, isInterviewing, currentSessionId } = useChatStore()
   const [input, setInput] = useState('')
   const [attachedFile, setAttachedFile] = useState<{ name: string; data: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -53,7 +53,7 @@ export function ChatWindow({ wsRef }: ChatWindowProps) {
     if (!text && !attachedFile) return
 
     if (isInterviewing) {
-      send({ type: 'answer', content: text })
+      send({ type: 'answer', content: text, sessionId: currentSessionId || undefined })
     } else if (attachedFile) {
       // 带附件的消息：文件内容 + 文本一起发送
       const content = `[FILE:${attachedFile.name}]${attachedFile.data}` + (text ? `\n${text}` : '')
@@ -247,7 +247,7 @@ export function ChatWindow({ wsRef }: ChatWindowProps) {
           )}
           {isInterviewing && (
             <button
-              onClick={() => send({ type: 'quit_interview' })}
+              onClick={() => send({ type: 'quit_interview', sessionId: currentSessionId || undefined })}
               className="px-3 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 whitespace-nowrap"
             >
               终止面试

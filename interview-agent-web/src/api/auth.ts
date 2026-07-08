@@ -37,7 +37,20 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
         throw new Error('认证已过期，请重新登录')
     }
 
+    if (!response.ok) {
+        throw new Error(await readErrorMessage(response))
+    }
+
     return response
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+    try {
+        const body = await response.clone().json() as { error?: string; message?: string }
+        return body.error || body.message || `请求失败：${response.status}`
+    } catch {
+        return `请求失败：${response.status}`
+    }
 }
 
 export async function register(username: string, password: string): Promise<AuthResponse> {
@@ -75,5 +88,30 @@ export async function postWithAuth<T = unknown>(url: string, data?: Record<strin
         headers: {'Content-Type': 'application/json'},
         body: data ? JSON.stringify(data) : undefined,
     })
+    return res.json() as Promise<T>
+}
+
+/**
+ * 带认证的 PATCH 请求
+ */
+export async function patchWithAuth<T = unknown>(url: string, data?: Record<string, unknown>): Promise<T> {
+    const res = await fetchWithAuth(url, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: data ? JSON.stringify(data) : undefined,
+    })
+    return res.json() as Promise<T>
+}
+
+/**
+ * 带认证的 DELETE 请求
+ */
+export async function deleteWithAuth<T = unknown>(url: string): Promise<T> {
+    const res = await fetchWithAuth(url, {
+        method: 'DELETE',
+    })
+    if (res.status === 204) {
+        return undefined as T
+    }
     return res.json() as Promise<T>
 }

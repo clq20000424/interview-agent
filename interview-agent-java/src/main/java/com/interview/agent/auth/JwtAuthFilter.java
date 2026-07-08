@@ -7,17 +7,16 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Collections;
 
 /**
- * JWT 认证过滤器
- * - 从请求头 Authorization: Bearer <token> 提取 token
- * - 验证 token，失败返回 401
- * - token 过期返回 401 + 特定错误信息
- *
- * @author 陈龙强
+ * JWT authentication filter.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -43,24 +42,27 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        String token = authHeader.substring(7);
+        String username;
         try {
-            String username = jwtService.validateToken(token);
-            // 将用户名存入 request attribute，后续可使用
-            request.setAttribute("username", username);
-            filterChain.doFilter(request, response);
+            username = jwtService.validateToken(authHeader.substring(7));
         } catch (JwtService.TokenExpiredException e) {
-            log.warn("[Auth] Token 已过期: {}", e.getMessage());
+            log.warn("[Auth] Token expired: {}", e.getMessage());
             sendUnauthorized(response, "Token 已过期，请重新登录");
+            return;
         } catch (Exception e) {
-            log.warn("[Auth] Token 验证失败: {}", e.getMessage());
+            log.warn("[Auth] Token validation failed: {}", e.getMessage());
             sendUnauthorized(response, "Token 无效");
+            return;
         }
+
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(username, null, Collections.emptyList());
+        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        request.setAttribute("username", username);
+        filterChain.doFilter(request, response);
     }
 
-    /**
-     * 判断是否跳过认证
-     */
     private boolean shouldSkipAuth(String path) {
         return path.equals("/api/register")
                 || path.equals("/api/login")
@@ -68,12 +70,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 || path.startsWith("/ws");
     }
 
-    /**
-     * 返回 401 未授权响应
-     */
     private void sendUnauthorized(HttpServletResponse response, String message) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        // 添加 WWW-Authenticate 头，符合 HTTP 规范，避免 Jetty 等客户端报错
         response.setHeader("WWW-Authenticate", "Bearer realm=\"interview-agent\"");
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write("{\"error\":\"" + message + "\",\"code\":401}");

@@ -14,13 +14,19 @@ import com.interview.agent.loader.WebLoader;
 import com.interview.agent.memory.RedisStore;
 import com.interview.agent.model.AnswerScore;
 import com.interview.agent.model.ClientMsg;
+import com.interview.agent.model.ConversationMessage;
 import com.interview.agent.model.ServerMsg;
+import com.interview.agent.model.Session;
 import com.interview.agent.rag.BM25Manager;
 import com.interview.agent.rag.MilvusStore;
 import com.interview.agent.rag.RagDocument;
+import com.interview.agent.repository.SessionRepository;
+import com.interview.agent.service.SessionCacheService;
 import com.interview.agent.skill.*;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -30,9 +36,11 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.*;
 
 /**
@@ -63,11 +71,18 @@ public class WebSocketHandler extends TextWebSocketHandler {
     private final RedisStore redisStore;
     private final JwtService jwtService;
     private final ChatModel chatModel;
+    private final SessionRepository sessionRepository;
+    private final SessionCacheService sessionCacheService;
 
     /**
      * session 管理
      */
     private final Map<String, WSSession> sessions = new ConcurrentHashMap<>();
+
+    /**
+     * 运行中的面试按业务 sessionId 建索引，用于页面刷新后把新 WebSocket 重新挂回原面试线程。
+     */
+    private final Map<String, WSSession> runningInterviews = new ConcurrentHashMap<>();
 
     /**
      * 异步任务线程池（面试流程 / 题库上传），独立于 ForkJoinPool.commonPool。
@@ -81,12 +96,17 @@ public class WebSocketHandler extends TextWebSocketHandler {
         return t;
     });
 
+    /**
+     * 注入 WebSocket 处理器依赖的编排器、聊天 Agent、RAG 组件、认证服务和会话仓库。
+     */
     public WebSocketHandler(Orchestrator orchestrator, ChatAgent chatAgent,
                             IntentRouter intentRouter, SkillRegistry skillRegistry,
                             DocumentLoader documentLoader, QuestionParser questionParser,
                             WebLoader webLoader, MilvusStore milvusStore,
                             BM25Manager bm25Manager, RedisStore redisStore,
-                            JwtService jwtService, ChatModel chatModel) {
+                            JwtService jwtService, ChatModel chatModel,
+                            SessionRepository sessionRepository,
+                            SessionCacheService sessionCacheService) {
         this.orchestrator = orchestrator;
         this.chatAgent = chatAgent;
         this.intentRouter = intentRouter;
@@ -99,6 +119,8 @@ public class WebSocketHandler extends TextWebSocketHandler {
         this.redisStore = redisStore;
         this.jwtService = jwtService;
         this.chatModel = chatModel;
+        this.sessionRepository = sessionRepository;
+        this.sessionCacheService = sessionCacheService;
     }
 
     /**
@@ -110,10 +132,14 @@ public class WebSocketHandler extends TextWebSocketHandler {
         List<org.springframework.ai.chat.messages.Message> chatHistory = new ArrayList<>();
         Skill activeSkill;
         SkillState skillState;
+        Session chatSession;
         BlockingQueue<String> answerCh = new LinkedBlockingQueue<>();
         volatile boolean interviewRunning = false;
     }
 
+    /**
+     * WebSocket 建连后校验 query 中的 JWT，并为当前连接初始化服务端会话状态。
+     */
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         // 从 URI query 解析 token
@@ -173,12 +199,18 @@ public class WebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * WebSocket 连接关闭后清理内存中的连接状态。
+     */
     @Override
     public void afterConnectionClosed(WebSocketSession session, @NotNull CloseStatus status) {
         sessions.remove(session.getId());
         log.info("[WS] 连接关闭 (sessionId={})", session.getId());
     }
 
+    /**
+     * 接收并解析客户端 WebSocket 消息，按消息类型分发到对应业务处理方法。
+     */
     @Override
     protected void handleTextMessage(WebSocketSession session, @NotNull TextMessage message) {
         WSSession ws = sessions.get(session.getId());
@@ -193,6 +225,8 @@ public class WebSocketHandler extends TextWebSocketHandler {
                 case "answer" -> handleAnswer(ws, msg);
                 case "upload_questions" -> handleUploadQuestions(ws, msg);
                 case "quit_interview" -> handleQuitInterview(ws, msg);
+                case "new_chat" -> handleNewChat(ws);
+                case "load_session" -> handleLoadSession(ws, msg);
                 default -> sendServerMsg(ws.conn, ServerMsg.builder()
                         .type("error")
                         .message("未知消息类型: " + msg.getType())
@@ -232,7 +266,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
                     ws.activeSkill = null;
                     ws.skillState = null;
                 }
-                sendServerMsg(ws.conn, ServerMsg.builder().type("chat_reply").content(resp.getContent()).build());
+                sendChatReply(ws, input, resp.getContent());
                 return;
             }
             // 命中新的技能意图：清空当前会话，落到下方「优先级 2」开启新技能
@@ -253,13 +287,16 @@ public class WebSocketHandler extends TextWebSocketHandler {
                 ws.activeSkill = null;
                 ws.skillState = null;
             }
-            sendServerMsg(ws.conn, ServerMsg.builder().type("chat_reply").content(resp.getContent()).build());
+            sendChatReply(ws, input, resp.getContent());
             return;
         }
 
         // 优先级 3：ChatAgent 兜底
         String reply = chatAgent.chat(ws.chatHistory, input);
-        sendServerMsg(ws.conn, ServerMsg.builder().type("chat_reply").content(reply).build());
+        ws.chatHistory.add(new UserMessage(input));
+        ws.chatHistory.add(new AssistantMessage(reply));
+        trimChatHistory(ws);
+        sendChatReply(ws, input, reply);
     }
 
     /**
@@ -288,21 +325,56 @@ public class WebSocketHandler extends TextWebSocketHandler {
 
         String finalJdText = jdText;
         String finalResumeText = resumeText;
+
+        // 生成会话唯一标识，用于 Redis 缓存 key 和数据库主键
+        String sessionId = UUID.randomUUID().toString();
+        runningInterviews.put(sessionId, ws);
+
+        // 先落一条进行中的会话索引。页面刷新时 /api/sessions/active 依赖它找到 Redis field。
+        Session pendingSession = createPendingInterviewSession(sessionId, ws.userID);
+        try {
+            sessionRepository.save(pendingSession);
+            notifySessionsChanged(ws);
+        } catch (Exception e) {
+            log.warn("[WS] 保存进行中会话索引失败，将仅依赖Redis缓存恢复: sessionId={}, userId={}, error={}",
+                    sessionId, ws.userID, e.getMessage());
+        }
+
+        // 通知前端当前会话 ID，前端收到后保存到 chatStore.currentSessionId
+        sendServerMsg(ws.conn, ServerMsg.builder()
+                .type("session_started")
+                .content(sessionId)
+                .build());
+
         asyncExecutor.execute(() -> {
+            Session session = null;
             try {
                 InterviewCallbacks callbacks = new InterviewCallbacks() {
+                    /**
+                     * 面试阶段变化时，把阶段名和提示文案推送给前端。
+                     */
                     @Override
                     public void onStageChange(String stage, String message) {
                         sendServerMsg(ws.conn, ServerMsg.builder()
                                 .type("stage_change").stage(stage).message(message).build());
+                        // 实时保存阶段变化消息到 Redis，防止刷新丢失
+                        saveMessageToRedis(ws.userID, sessionId, "system", message, Map.of("stage", stage));
                     }
 
+                    /**
+                     * 面试官生成新问题时，把题号和题目内容推送给前端。
+                     */
                     @Override
                     public void onQuestion(int questionNum, String content) {
                         sendServerMsg(ws.conn, ServerMsg.builder()
                                 .type("question").questionNum(questionNum).content(content).build());
+                        // 实时保存题目消息到 Redis，包含题号和消息类型元数据
+                        saveMessageToRedis(ws.userID, sessionId, "assistant", content, Map.of("question_num", questionNum, "message_type", "question"));
                     }
 
+                    /**
+                     * 用户回答完成评分后，把分数、反馈和命中/遗漏要点推送给前端。
+                     */
                     @Override
                     public void onScore(AnswerScore score) {
                         sendServerMsg(ws.conn, ServerMsg.builder()
@@ -312,20 +384,39 @@ public class WebSocketHandler extends TextWebSocketHandler {
                                 .keyPointsHit(score.getKeyPointsHit())
                                 .keyPointsMissed(score.getKeyPointsMissed())
                                 .build());
+                        // 实时保存评分消息到 Redis，包含分数、反馈和要点命中情况
+                        saveMessageToRedis(ws.userID, sessionId, "system", score.getFeedback(), Map.of(
+                                "score", score.getScore(),
+                                "message_type", "score",
+                                "key_points_hit", score.getKeyPointsHit(),
+                                "key_points_missed", score.getKeyPointsMissed()));
                     }
 
+                    /**
+                     * 评估报告生成后，把报告 Markdown 内容推送给前端展示。
+                     */
                     @Override
                     public void onReport(String report) {
                         sendServerMsg(ws.conn, ServerMsg.builder()
                                 .type("report").content(report).build());
+                        // 实时保存评估报告消息到 Redis
+                        saveMessageToRedis(ws.userID, sessionId, "assistant", report, Map.of("message_type", "report"));
                     }
 
+                    /**
+                     * 复习计划生成后，把计划 Markdown 内容推送给前端展示。
+                     */
                     @Override
                     public void onReviewPlan(String plan) {
                         sendServerMsg(ws.conn, ServerMsg.builder()
                                 .type("review_plan").content(plan).build());
+                        // 实时保存复习计划消息到 Redis
+                        saveMessageToRedis(ws.userID, sessionId, "assistant", plan, Map.of("message_type", "review_plan"));
                     }
 
+                    /**
+                     * 从阻塞队列中等待用户回答，并把退出指令转换为面试终止异常。
+                     */
                     @Override
                     public String getUserAnswer() throws InterruptedException, UserQuitException {
                         String answer = ws.answerCh.take();
@@ -333,18 +424,45 @@ public class WebSocketHandler extends TextWebSocketHandler {
                                 || "退出".equals(answer) || "结束面试".equals(answer)) {
                             throw new UserQuitException();
                         }
+                        // 用户回答也实时保存到 Redis，确保刷新后能恢复对话上下文
+                        saveMessageToRedis(ws.userID, sessionId, "user", answer, Map.of("message_type", "text"));
                         return answer;
                     }
                 };
 
-                orchestrator.runInterview(finalJdText, finalResumeText, ws.userID, callbacks);
+                session = orchestrator.runInterview(finalJdText, finalResumeText, ws.userID, callbacks);
+                // 将生成的 sessionId 设置到 Session 对象，作为数据库主键
+                if (session != null) {
+                    session.setId(sessionId);
+                    session.setSessionType(Session.TYPE_INTERVIEW);
+                    if (session.getTitle() == null || session.getTitle().isBlank()) {
+                        session.setTitle(buildInterviewTitle(session));
+                    }
+                }
             } catch (Exception e) {
                 log.error("[WS] 面试流程异常: {}", e.getMessage(), e);
                 sendServerMsg(ws.conn, ServerMsg.builder()
                         .type("error").message("面试流程异常: " + e.getMessage()).build());
             } finally {
+                // 面试结束后：从 Redis 读取所有缓存消息，批量持久化到 MySQL，然后清除 Redis 缓存
+                if (session != null) {
+                    try {
+                        List<ConversationMessage> cachedMessages = sessionCacheService.getMessages(ws.userID, sessionId);
+                        if (!cachedMessages.isEmpty()) {
+                            session.setChatMessages(cachedMessages);
+                            log.info("[WS] 从Redis恢复 {} 条消息到会话", cachedMessages.size());
+                        }
+                        sessionRepository.save(session);
+                        log.info("[WS] 会话已保存: sessionId={}, userId={}", session.getId(), ws.userID);
+                        // 持久化成功后清除 Redis 缓存，释放内存
+                        sessionCacheService.clearSessionCache(ws.userID, sessionId);
+                    } catch (Exception e) {
+                        log.warn("[WS] 保存会话失败: {}", e.getMessage());
+                    }
+                }
                 sendServerMsg(ws.conn, ServerMsg.builder().type("interview_complete").build());
                 ws.interviewRunning = false;
+                runningInterviews.remove(sessionId, ws);
             }
         });
     }
@@ -353,11 +471,12 @@ public class WebSocketHandler extends TextWebSocketHandler {
      * 用户回答
      */
     private void handleAnswer(WSSession ws, ClientMsg msg) {
-        if (!ws.interviewRunning) {
+        WSSession target = resolveRunningInterviewSession(ws, msg.getSessionId());
+        if (target == null || !target.interviewRunning) {
             sendServerMsg(ws.conn, ServerMsg.builder().type("error").message("当前没有进行中的面试").build());
             return;
         }
-        ws.answerCh.offer(msg.getContent() != null ? msg.getContent() : "");
+        target.answerCh.offer(msg.getContent() != null ? msg.getContent() : "");
     }
 
     /**
@@ -458,10 +577,208 @@ public class WebSocketHandler extends TextWebSocketHandler {
      * 用户主动终止面试
      */
     private void handleQuitInterview(WSSession ws, ClientMsg msg) {
-        if (ws.interviewRunning) {
-            ws.answerCh.offer("/quit");
+        WSSession target = resolveRunningInterviewSession(ws, msg.getSessionId());
+        if (target != null && target.interviewRunning) {
+            target.answerCh.offer("/quit");
         } else {
             sendServerMsg(ws.conn, ServerMsg.builder().type("error").message("当前没有进行中的面试").build());
+        }
+    }
+
+    /**
+     * 开启一个新的普通聊天会话，清空当前聊天上下文和技能状态。
+     */
+    private void handleNewChat(WSSession ws) {
+        ws.chatSession = null;
+        ws.chatHistory.clear();
+        ws.activeSkill = null;
+        ws.skillState = null;
+        notifySessionsChanged(ws);
+    }
+
+    /**
+     * 向前端发送普通聊天回复，并把本轮用户输入和助手回复保存到历史会话。
+     */
+    private void sendChatReply(WSSession ws, String userInput, String reply) {
+        sendServerMsg(ws.conn, ServerMsg.builder().type("chat_reply").content(reply).build());
+        saveChatTurn(ws, userInput, reply);
+    }
+
+    /**
+     * 将一轮普通聊天问答追加到当前聊天 Session，并持久化到数据库。
+     */
+    private void saveChatTurn(WSSession ws, String userInput, String reply) {
+        try {
+            Session session = ensureChatSession(ws, userInput);
+            LocalDateTime now = LocalDateTime.now();
+            session.getChatMessages().add(ConversationMessage.builder()
+                    .role("user")
+                    .messageType("text")
+                    .content(userInput)
+                    .createdAt(now)
+                    .build());
+            session.getChatMessages().add(ConversationMessage.builder()
+                    .role("assistant")
+                    .messageType("text")
+                    .content(reply)
+                    .createdAt(now)
+                    .build());
+            session.setUpdatedAt(now);
+            ws.chatSession = sessionRepository.save(session);
+            notifySessionsChanged(ws);
+        } catch (Exception e) {
+            log.warn("[WS] 保存聊天历史失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 加载历史聊天会话到当前 WebSocket 状态，使后续聊天继续追加到该历史会话。
+     */
+    private void handleLoadSession(WSSession ws, ClientMsg msg) {
+        String sessionId = msg.getSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            sendServerMsg(ws.conn, ServerMsg.builder().type("error").message("会话 ID 不能为空").build());
+            return;
+        }
+
+        if (reattachRunningInterview(ws, sessionId)) {
+            return;
+        }
+
+        try {
+            Session session = sessionRepository.findById(sessionId).orElse(null);
+            if (session == null || !ws.userID.equals(session.getUserId())) {
+                sendServerMsg(ws.conn, ServerMsg.builder().type("error").message("无权访问该会话").build());
+                return;
+            }
+
+            ws.activeSkill = null;
+            ws.skillState = null;
+            ws.chatHistory.clear();
+
+            if (Session.TYPE_CHAT.equals(session.getSessionType()) || session.getChatMessages() != null) {
+                if (session.getChatMessages() == null) {
+                    session.setChatMessages(new ArrayList<>());
+                }
+                ws.chatSession = session;
+                for (ConversationMessage message : session.getChatMessages()) {
+                    if ("user".equals(message.getRole())) {
+                        ws.chatHistory.add(new UserMessage(message.getContent()));
+                    } else if ("assistant".equals(message.getRole())) {
+                        ws.chatHistory.add(new AssistantMessage(message.getContent()));
+                    }
+                }
+                trimChatHistory(ws);
+            } else {
+                ws.chatSession = null;
+            }
+        } catch (Exception e) {
+            log.warn("[WS] 加载历史会话失败: {}", e.getMessage());
+            sendServerMsg(ws.conn, ServerMsg.builder().type("error").message("加载历史会话失败").build());
+        }
+    }
+
+    private WSSession resolveRunningInterviewSession(WSSession ws, String sessionId) {
+        if (ws.interviewRunning) {
+            return ws;
+        }
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        WSSession target = runningInterviews.get(sessionId);
+        if (target == null || !ws.userID.equals(target.userID)) {
+            return null;
+        }
+        WebSocketSession currentConn = ws.conn;
+        target.conn = currentConn;
+        sessions.put(currentConn.getId(), target);
+        ws.answerCh = target.answerCh;
+        ws.interviewRunning = target.interviewRunning;
+        return target;
+    }
+
+    private boolean reattachRunningInterview(WSSession ws, String sessionId) {
+        WSSession target = runningInterviews.get(sessionId);
+        if (target == null || !ws.userID.equals(target.userID)) {
+            return false;
+        }
+        WebSocketSession currentConn = ws.conn;
+        target.conn = currentConn;
+        sessions.put(currentConn.getId(), target);
+        ws.answerCh = target.answerCh;
+        ws.interviewRunning = target.interviewRunning;
+        ws.activeSkill = null;
+        ws.skillState = null;
+        log.info("[WS] 用户 {} 重新挂接进行中的面试: sessionId={}", ws.userID, sessionId);
+        return true;
+    }
+
+    /**
+     * 获取当前普通聊天 Session；不存在时用第一条用户输入创建新的聊天 Session。
+     */
+    private Session ensureChatSession(WSSession ws, String firstInput) {
+        if (ws.chatSession != null) {
+            return ws.chatSession;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        Session session = Session.builder()
+                .id(UUID.randomUUID().toString())
+                .title(buildChatTitle(firstInput))
+                .sessionType(Session.TYPE_CHAT)
+                .userId(ws.userID)
+                .status(Session.STATUS_CHAT)
+                .chatMessages(new ArrayList<>())
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        ws.chatSession = session;
+        return session;
+    }
+
+    /**
+     * 创建一条进行中的面试会话记录，作为 Redis 缓存恢复和历史列表展示的 MySQL 索引。
+     */
+    private Session createPendingInterviewSession(String sessionId, String userId) {
+        LocalDateTime now = LocalDateTime.now();
+        return Session.builder()
+                .id(sessionId)
+                .title("进行中的面试")
+                .sessionType(Session.TYPE_INTERVIEW)
+                .userId(userId)
+                .status(Session.STATUS_INTERVIEWING)
+                .chatMessages(new ArrayList<>())
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+    }
+
+    private String buildInterviewTitle(Session session) {
+        if (session.getJdAnalysis() != null && session.getJdAnalysis().getPosition() != null
+                && !session.getJdAnalysis().getPosition().isBlank()) {
+            return session.getJdAnalysis().getPosition();
+        }
+        return "面试会话";
+    }
+
+    /**
+     * 根据第一条用户输入生成历史会话标题，过长时截断。
+     */
+    private String buildChatTitle(String input) {
+        String title = input == null ? "" : input.replaceAll("\\s+", " ").trim();
+        if (title.isEmpty()) {
+            return "新对话";
+        }
+        return title.length() <= 40 ? title : title.substring(0, 40) + "...";
+    }
+
+    /**
+     * 裁剪普通聊天上下文，只保留最近的消息，避免请求模型时上下文无限增长。
+     */
+    private void trimChatHistory(WSSession ws) {
+        int maxHistorySize = 20;
+        if (ws.chatHistory.size() > maxHistorySize) {
+            ws.chatHistory = new ArrayList<>(ws.chatHistory.subList(ws.chatHistory.size() - maxHistorySize, ws.chatHistory.size()));
         }
     }
 
@@ -499,6 +816,9 @@ public class WebSocketHandler extends TextWebSocketHandler {
         return content;
     }
 
+    /**
+     * 将服务端消息序列化为 JSON 并发送到指定 WebSocket 连接。
+     */
     private void sendServerMsg(WebSocketSession session, ServerMsg msg) {
         try {
             if (session.isOpen()) {
@@ -508,6 +828,13 @@ public class WebSocketHandler extends TextWebSocketHandler {
         } catch (Exception e) {
             log.error("[WS] 发送消息失败: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 通知前端历史会话列表已变化，需要重新拉取列表。
+     */
+    private void notifySessionsChanged(WSSession ws) {
+        sendServerMsg(ws.conn, ServerMsg.builder().type("sessions_changed").build());
     }
 
     /**
@@ -522,6 +849,9 @@ public class WebSocketHandler extends TextWebSocketHandler {
         return sb.toString();
     }
 
+    /**
+     * 计算输入内容的 SHA-256，用于判断上传题库文件内容是否重复。
+     */
     private String sha256(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -535,6 +865,32 @@ public class WebSocketHandler extends TextWebSocketHandler {
             return hexString.toString();
         } catch (Exception e) {
             return input.hashCode() + "";
+        }
+    }
+
+    /**
+     * 保存消息到 Redis 缓存的辅助方法
+     * <p>
+     * 将消息内容、角色和元数据封装为 ConversationMessage 对象，然后调用 SessionCacheService 保存到 Redis。
+     * 如果保存失败只记录警告日志，不影响主流程（面试仍可继续，只是刷新后可能丢失部分消息）。
+     * </p>
+     *
+     * @param sessionId 会话唯一标识
+     * @param role      消息角色：user/assistant/system
+     * @param content   消息内容
+     * @param metadata  元数据 Map，可包含 message_type、score、question_num 等额外信息
+     */
+    private void saveMessageToRedis(String userId, String sessionId, String role, String content, Map<String, Object> metadata) {
+        try {
+            ConversationMessage msg = ConversationMessage.builder()
+                    .role(role)
+                    .content(content)
+                    .messageType(metadata.getOrDefault("message_type", "text").toString())
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            sessionCacheService.saveMessage(userId, sessionId, msg);
+        } catch (Exception e) {
+            log.warn("[WS] 保存消息到Redis失败: {}", e.getMessage());
         }
     }
 }
