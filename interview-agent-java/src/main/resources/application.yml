@@ -16,6 +16,8 @@ spring:
       chat:
         options:
           model: ${LLM_MODEL:qwen-plus}
+          # 启用思考模式（某些新模型如 qwen-plus 要求必须开启）
+          enable-thinking: true
       embedding:
         options:
           model: ${EMBEDDING_MODEL:text-embedding-v3}

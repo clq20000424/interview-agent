@@ -54,9 +54,10 @@ export class WSClient {
     this.ws.onclose = (event) => {
       this.onStatusChange(false)
       
-      // 检查关闭原因，如果是认证问题（code 1008 或特定原因），不重连
-      if (event.code === 1008 || event.reason?.includes('auth') || event.reason?.includes('token')) {
-        console.warn('[WS] 连接因认证问题关闭，不自动重连')
+      // 检查关闭原因，如果是认证问题（code 1008 POLICY_VIOLATION），不重连
+      // 1008 表示策略违规，我们在后端用于token过期/无效的情况
+      if (event.code === 1008) {
+        console.warn('[WS] 连接因认证问题关闭 (code=1008)，不自动重连')
         this.handleAuthError()
         return
       }

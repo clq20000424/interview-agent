@@ -7,7 +7,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -21,7 +20,6 @@ import java.io.IOException;
  * @author 陈龙强
  */
 @Slf4j
-@Component
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
 
@@ -75,6 +73,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
      */
     private void sendUnauthorized(HttpServletResponse response, String message) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        // 添加 WWW-Authenticate 头，符合 HTTP 规范，避免 Jetty 等客户端报错
+        response.setHeader("WWW-Authenticate", "Bearer realm=\"interview-agent\"");
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write("{\"error\":\"" + message + "\",\"code\":401}");
     }
