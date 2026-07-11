@@ -57,6 +57,11 @@ export default function App() {
                 }
             } catch (err) {
                 console.error('[App] 检查活跃会话失败', err)
+                // 如果是网络错误（后端服务不可达），清除本地 token 并显示登录页
+                if (err instanceof TypeError) {
+                    console.warn('[App] 后端服务不可达，清除本地 token')
+                    useAuthStore.getState().logout()
+                }
             }
         }
 
