@@ -254,7 +254,7 @@ public class Orchestrator {
                     // Rerank 取 top 1
                     List<RagDocument> reranked = reranker.rerank(query, docs);
                     if (reranked == null || reranked.isEmpty()) reranked = docs;
-                    RagDocument topDoc = reranked.get(0);
+                    RagDocument topDoc = reranked.getFirst();
                     log.info("[RAG] 方向 {} 匹配到题库原题 [{}]", i + 1, topDoc.getId());
 
                     String questionContent = topDoc.getContent();
@@ -505,7 +505,7 @@ public class Orchestrator {
         if (state.getQaHistory() != null && !state.getQaHistory().isEmpty()) {
             List<QAPair> weakQAs = state.getQaHistory().stream()
                     .filter(qa -> qa.getScore() < 60)
-                    .collect(Collectors.toList());
+                    .toList();
 
             if (!weakQAs.isEmpty()) {
                 c.cb.onStageChange("review_weak",
@@ -553,7 +553,20 @@ public class Orchestrator {
     private void reviewPlan(Ctx c) {
         c.cb.onStageChange("review_plan", "正在生成复习计划...");
 
-        c.reviewPlan = reviewPlanner.plan(c.report);
+        ReviewPlanner.GenerationResult generationResult = reviewPlanner.plan(c.report);
+        c.reviewPlan = generationResult.plan();
+        if (generationResult.fallback()) {
+            String weakTopics = c.reviewPlan.getWeakAreas().stream()
+                    .map(ReviewPlan.WeakArea::getTopic)
+                    .filter(Objects::nonNull)
+                    .filter(topic -> !topic.isBlank())
+                    .limit(3)
+                    .collect(Collectors.joining("、"));
+            String fallbackMessage = weakTopics.isEmpty()
+                    ? "模型服务暂时不可用，已根据本次面试评估生成基础复习计划；推荐资源暂缺。"
+                    : String.format("模型服务暂时不可用，已根据本次评估薄弱项（%s）生成基础复习计划；推荐资源暂缺。", weakTopics);
+            c.cb.onStageChange("review_plan_fallback", fallbackMessage);
+        }
         c.session.setReviewPlan(c.reviewPlan);
         c.session.setStatus(Session.STATUS_COMPLETED);
         c.session.setUpdatedAt(LocalDateTime.now());
@@ -665,7 +678,7 @@ public class Orchestrator {
             }
 
             if (!docs.isEmpty()) {
-                String content = docs.get(0).getContent();
+                String content = docs.getFirst().getContent();
                 int refIdx = content.indexOf("\n参考答案：");
                 if (refIdx >= 0) {
                     return content.substring(refIdx + "\n参考答案：".length()).trim();

@@ -1,8 +1,12 @@
 package com.interview.agent.agent;
 
+import com.interview.agent.model.EvaluationReport;
 import com.interview.agent.model.ReviewPlan;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -74,5 +78,68 @@ class ReviewPlannerTest {
         assertEquals(1, plan.getStudyPlan().size());
         assertEquals(1, plan.getResources().size());
         assertEquals("MySQL 官方文档", plan.getResources().get(0).getTitle());
+    }
+
+    @Test
+    @DisplayName("模型不可用时应根据薄弱项生成本地基础计划")
+    void buildFallbackPlan_withWeaknesses_createsActionablePlan() {
+        ReviewPlanner planner = new ReviewPlanner(null);
+        EvaluationReport report = EvaluationReport.builder()
+                .sessionId("sess-fallback")
+                .overallScore(68)
+                .weaknesses(List.of("Java 并发", "MySQL"))
+                .dimensionScore(Map.of("Java 并发", 52.0, "MySQL", 70.0))
+                .build();
+
+        ReviewPlan plan = planner.buildFallbackPlan(report);
+
+        assertEquals("sess-fallback", plan.getSessionId());
+        assertEquals(2, plan.getWeakAreas().size());
+        assertEquals("high", plan.getWeakAreas().get(0).getPriority());
+        assertEquals(2, plan.getStudyPlan().size());
+        assertFalse(plan.getStudyPlan().get(0).getActions().isEmpty());
+        assertTrue(plan.getResources().isEmpty(), "本地降级计划不应编造资源链接");
+        assertNotNull(plan.getCreatedAt());
+    }
+
+    @Test
+    @DisplayName("报告没有薄弱项时应选取得分最低的三个维度")
+    void buildFallbackPlan_withoutWeaknesses_usesLowestDimensions() {
+        ReviewPlanner planner = new ReviewPlanner(null);
+        EvaluationReport report = EvaluationReport.builder()
+                .sessionId("sess-dimensions")
+                .overallScore(70)
+                .dimensionScore(Map.of(
+                        "基础知识", 80.0,
+                        "系统设计", 55.0,
+                        "项目经验", 62.0,
+                        "沟通表达", 75.0
+                ))
+                .build();
+
+        ReviewPlan plan = planner.buildFallbackPlan(report);
+
+        assertEquals(3, plan.getWeakAreas().size());
+        assertEquals("系统设计", plan.getStudyPlan().get(0).getTopic());
+        assertEquals("项目经验", plan.getStudyPlan().get(1).getTopic());
+        assertEquals("沟通表达", plan.getStudyPlan().get(2).getTopic());
+    }
+
+    @Test
+    @DisplayName("所有模型调用失败时应返回可识别的降级结果")
+    void plan_whenAllModelCallsFail_marksResultAsFallback() {
+        ReviewPlanner planner = new ReviewPlanner(null);
+        EvaluationReport report = EvaluationReport.builder()
+                .sessionId("sess-model-unavailable")
+                .overallScore(58)
+                .weaknesses(List.of("系统设计"))
+                .build();
+
+        ReviewPlanner.GenerationResult result = assertDoesNotThrow(() -> planner.plan(report));
+
+        assertTrue(result.fallback());
+        assertNotNull(result.plan());
+        assertEquals("sess-model-unavailable", result.plan().getSessionId());
+        assertEquals("系统设计", result.plan().getWeakAreas().get(0).getTopic());
     }
 }
