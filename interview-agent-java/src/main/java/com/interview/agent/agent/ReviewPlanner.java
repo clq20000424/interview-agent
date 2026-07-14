@@ -14,6 +14,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +22,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 复习规划 Agent —— 全项目唯一真正调用外部工具的 Agent，用 Spring AI Alibaba 的 ReactAgent 实现：
@@ -34,6 +37,12 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class ReviewPlanner {
+
+    private static final int SINGLE_TURN_MAX_ATTEMPTS = 2;
+
+    /** 让编排层能够区分 AI 生成和本地降级，并向用户明确披露。 */
+    public record GenerationResult(ReviewPlan plan, boolean fallback) {
+    }
 
     private final ChatModel chatModel;
     private final ObjectMapper objectMapper = new ObjectMapper()
@@ -74,7 +83,7 @@ public class ReviewPlanner {
               ]
             }""";
 
-    public ReviewPlan plan(EvaluationReport report) {
+    public GenerationResult plan(EvaluationReport report) {
         log.info("[ReviewPlanner] 开始生成复习计划");
 
         String reportJson;
@@ -85,16 +94,58 @@ public class ReviewPlanner {
         }
         String userMsg = "## 面试评估报告\n" + reportJson + "\n" + OUTPUT_FORMAT;
 
-        String content = generateWithReactAgent(userMsg);
-        if (content == null) {
-            // 降级：ReactAgent 不可用时退回单轮生成（无工具）
-            content = chatModel.call(new Prompt(List.of(
-                    new SystemMessage(REVIEW_PLANNER_INSTRUCTION),
-                    new UserMessage(userMsg)
-            ))).getResult().getOutput().getText();
+        ReviewPlan plan = tryParsePlan(generateWithReactAgent(userMsg), report.getSessionId(), "ReactAgent");
+        if (plan != null) {
+            return new GenerationResult(plan, false);
         }
 
-        return parsePlan(content, report.getSessionId());
+        // ReactAgent 失败或输出不可解析时，退回无工具的单轮调用，并对瞬时故障有限重试。
+        for (int attempt = 1; attempt <= SINGLE_TURN_MAX_ATTEMPTS; attempt++) {
+            String content = generateSingleTurn(userMsg, attempt);
+            plan = tryParsePlan(content, report.getSessionId(), "普通模型第 " + attempt + " 次调用");
+            if (plan != null) {
+                return new GenerationResult(plan, false);
+            }
+        }
+
+        log.error("[ReviewPlanner] 所有模型调用均失败，使用评估报告生成本地基础复习计划");
+        return new GenerationResult(buildFallbackPlan(report), true);
+    }
+
+    private String generateSingleTurn(String userMsg, int attempt) {
+        try {
+            ChatResponse response = chatModel.call(new Prompt(List.of(
+                    new SystemMessage(REVIEW_PLANNER_INSTRUCTION),
+                    new UserMessage(userMsg)
+            )));
+            return extractResponseText(response);
+        } catch (Exception e) {
+            log.warn("[ReviewPlanner] 普通模型第 {} 次调用失败: {}", attempt, e.getMessage());
+            return null;
+        }
+    }
+
+    private String extractResponseText(ChatResponse response) {
+        if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
+            throw new IllegalStateException("模型未返回有效响应");
+        }
+        String content = response.getResult().getOutput().getText();
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException("模型返回内容为空");
+        }
+        return content;
+    }
+
+    private ReviewPlan tryParsePlan(String content, String sessionId, String source) {
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+        try {
+            return parsePlan(content, sessionId);
+        } catch (RuntimeException e) {
+            log.warn("[ReviewPlanner] {} 输出不可解析: {}", source, e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -135,11 +186,97 @@ public class ReviewPlanner {
                     .build();
 
             AssistantMessage msg = agent.call(userMsg);
-            return msg != null ? msg.getText() : null;
+            String content = msg != null ? msg.getText() : null;
+            if (content == null || content.isBlank()) {
+                throw new IllegalStateException("ReactAgent 返回内容为空");
+            }
+            return content;
         } catch (Exception e) {
             log.warn("[ReviewPlanner] ReactAgent 执行失败，降级为单轮生成: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 模型服务不可用时，根据已有评估数据构造可执行的基础计划，避免面试流程在最后一步中断。
+     */
+    ReviewPlan buildFallbackPlan(EvaluationReport report) {
+        List<ReviewPlan.WeakArea> weakAreas = new ArrayList<>();
+        List<String> weaknesses = report.getWeaknesses();
+        Map<String, Double> dimensionScores = report.getDimensionScore();
+
+        if (weaknesses != null && !weaknesses.isEmpty()) {
+            for (String topic : weaknesses) {
+                if (topic == null || topic.isBlank()) {
+                    continue;
+                }
+                double score = findTopicScore(topic, dimensionScores, report.getOverallScore());
+                weakAreas.add(createWeakArea(topic, score));
+            }
+        } else if (dimensionScores != null && !dimensionScores.isEmpty()) {
+            dimensionScores.entrySet().stream()
+                    .filter(entry -> entry.getKey() != null && !entry.getKey().isBlank() && entry.getValue() != null)
+                    .sorted(Map.Entry.comparingByValue())
+                    .limit(3)
+                    .map(entry -> createWeakArea(entry.getKey(), entry.getValue()))
+                    .forEach(weakAreas::add);
+        }
+
+        List<ReviewPlan.StudyItem> studyPlan = weakAreas.stream()
+                .sorted(Comparator.comparingDouble(ReviewPlan.WeakArea::getScore))
+                .map(this::createFallbackStudyItem)
+                .toList();
+
+        return ReviewPlan.builder()
+                .sessionId(report.getSessionId())
+                .weakAreas(weakAreas)
+                .studyPlan(studyPlan)
+                .resources(new ArrayList<>())
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+    private double findTopicScore(String topic, Map<String, Double> dimensionScores, double defaultScore) {
+        if (dimensionScores == null || dimensionScores.isEmpty()) {
+            return defaultScore;
+        }
+        String normalizedTopic = topic.toLowerCase();
+        return dimensionScores.entrySet().stream()
+                .filter(entry -> entry.getKey() != null && entry.getValue() != null)
+                .filter(entry -> {
+                    String dimension = entry.getKey().toLowerCase();
+                    return dimension.contains(normalizedTopic) || normalizedTopic.contains(dimension);
+                })
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(defaultScore);
+    }
+
+    private ReviewPlan.WeakArea createWeakArea(String topic, double score) {
+        String priority = score < 60 ? "high" : score < 75 ? "medium" : "low";
+        return ReviewPlan.WeakArea.builder()
+                .topic(topic)
+                .score(score)
+                .priority(priority)
+                .build();
+    }
+
+    private ReviewPlan.StudyItem createFallbackStudyItem(ReviewPlan.WeakArea weakArea) {
+        String timeEstimate = switch (weakArea.getPriority()) {
+            case "high" -> "4 小时";
+            case "medium" -> "3 小时";
+            default -> "2 小时";
+        };
+        return ReviewPlan.StudyItem.builder()
+                .topic(weakArea.getTopic())
+                .objective("补齐 " + weakArea.getTopic() + " 的核心知识并提升实际应用能力")
+                .actions(List.of(
+                        "复盘面试中与 " + weakArea.getTopic() + " 相关的失分点",
+                        "查阅官方文档，整理核心概念和常见误区",
+                        "完成 2~3 道相关练习并总结答案"
+                ))
+                .timeEstimate(timeEstimate)
+                .build();
     }
 
     /**
