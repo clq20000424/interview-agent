@@ -104,12 +104,15 @@ export function ChatWindow({ wsRef }: ChatWindowProps) {
     e.target.value = ''
   }
 
+  /**
+   * 校验并提交 JD、简历和当前 Session ID；当前普通聊天存在时由后端复用该会话进入面试。
+   */
   const handleStartInterview = () => {
     const jd = jdFile ? `[FILE:${jdFile.name}]${jdFile.data}` : jdText
     const resume = resumeFile ? `[FILE:${resumeFile.name}]${resumeFile.data}` : resumeText
     if (!jd || !resume) return
 
-    send({ type: 'start_interview', jd, resume })
+    send({ type: 'start_interview', jd, resume, sessionId: currentSessionId || undefined })
     useChatStore.getState().setInterviewing(true)
     useChatStore.getState().addMessage({
       id: String(Date.now()),

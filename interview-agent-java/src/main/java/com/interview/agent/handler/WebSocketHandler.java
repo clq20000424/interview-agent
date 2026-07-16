@@ -12,11 +12,7 @@ import com.interview.agent.loader.DocumentLoader;
 import com.interview.agent.loader.QuestionParser;
 import com.interview.agent.loader.WebLoader;
 import com.interview.agent.memory.RedisStore;
-import com.interview.agent.model.AnswerScore;
-import com.interview.agent.model.ClientMsg;
-import com.interview.agent.model.ConversationMessage;
-import com.interview.agent.model.ServerMsg;
-import com.interview.agent.model.Session;
+import com.interview.agent.model.*;
 import com.interview.agent.rag.BM25Manager;
 import com.interview.agent.rag.MilvusStore;
 import com.interview.agent.rag.RagDocument;
@@ -85,10 +81,8 @@ public class WebSocketHandler extends TextWebSocketHandler {
     private final Map<String, WSSession> runningInterviews = new ConcurrentHashMap<>();
 
     /**
-     * 异步任务线程池（面试流程 / 题库上传），独立于 ForkJoinPool.commonPool。
-     * 面试流程内部用 Spring AI Alibaba Graph 编排，graph 的 node_async 节点会提交到 commonPool 执行；
-     * 若再用 commonPool 跑 runInterview 并阻塞等待节点（interview 节点还会阻塞等用户回答），
-     * 会与节点执行互相抢占 commonPool 线程，导致线程饥饿 / 死锁。故面试走独立可扩展线程池。
+     * 异步任务线程池（面试流程 / 题库上传）。面试节点会阻塞等待用户回答，必须与 WebSocket
+     * 消息处理线程隔离，避免长任务占住连接线程。
      */
     private final ExecutorService asyncExecutor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "interview-async-worker");
@@ -300,7 +294,11 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 开始面试
+     * 启动完整面试流程。优先把当前用户的普通聊天 Session 升级为面试并复用原 ID；
+     * 没有可复用会话时才创建新 Session。面试前消息会在流程结束时与 Redis 面试消息合并持久化。
+     *
+     * @param ws  当前 WebSocket 业务会话
+     * @param msg 包含 JD、简历和可选当前 Session ID 的客户端消息
      */
     private void handleStartInterview(WSSession ws, ClientMsg msg) {
         if (ws.interviewRunning) {
@@ -326,12 +324,23 @@ public class WebSocketHandler extends TextWebSocketHandler {
         String finalJdText = jdText;
         String finalResumeText = resumeText;
 
-        // 生成会话唯一标识，用于 Redis 缓存 key 和数据库主键
-        String sessionId = UUID.randomUUID().toString();
+        // 从普通聊天进入面试时复用原 Session，避免历史列表出现一条聊天和一条面试记录。
+        Session currentChatSession = resolveChatSessionForInterview(ws, msg.getSessionId());
+        Session pendingSession = preparePendingInterviewSession(currentChatSession, ws.userID);
+        String sessionId = pendingSession.getId();
+        List<ConversationMessage> preInterviewMessages = copyMessages(pendingSession.getChatMessages());
+        LocalDateTime originalCreatedAt = pendingSession.getCreatedAt();
+        Boolean originalPinned = pendingSession.getPinned();
+        LocalDateTime originalPinnedAt = pendingSession.getPinnedAt();
+
+        // 面试结束后的普通聊天应新建 Session，不能继续追加到已升级的面试记录。
+        ws.chatSession = null;
+        ws.chatHistory.clear();
+        ws.activeSkill = null;
+        ws.skillState = null;
         runningInterviews.put(sessionId, ws);
 
         // 先落一条进行中的会话索引。页面刷新时 /api/sessions/active 依赖它找到 Redis field。
-        Session pendingSession = createPendingInterviewSession(sessionId, ws.userID);
         try {
             sessionRepository.save(pendingSession);
             notifySessionsChanged(ws);
@@ -435,6 +444,9 @@ public class WebSocketHandler extends TextWebSocketHandler {
                 if (session != null) {
                     session.setId(sessionId);
                     session.setSessionType(Session.TYPE_INTERVIEW);
+                    session.setCreatedAt(originalCreatedAt);
+                    session.setPinned(originalPinned);
+                    session.setPinnedAt(originalPinnedAt);
                     if (session.getTitle() == null || session.getTitle().isBlank()) {
                         session.setTitle(buildInterviewTitle(session));
                     }
@@ -448,9 +460,11 @@ public class WebSocketHandler extends TextWebSocketHandler {
                 if (session != null) {
                     try {
                         List<ConversationMessage> cachedMessages = sessionCacheService.getMessages(ws.userID, sessionId);
-                        if (!cachedMessages.isEmpty()) {
-                            session.setChatMessages(cachedMessages);
-                            log.info("[WS] 从Redis恢复 {} 条消息到会话", cachedMessages.size());
+                        List<ConversationMessage> allMessages = mergeMessages(preInterviewMessages, cachedMessages);
+                        if (!allMessages.isEmpty()) {
+                            session.setChatMessages(allMessages);
+                            log.info("[WS] 合并 {} 条原聊天消息和 {} 条面试消息到会话",
+                                    preInterviewMessages.size(), cachedMessages.size());
                         }
                         sessionRepository.save(session);
                         log.info("[WS] 会话已保存: sessionId={}, userId={}", session.getId(), ws.userID);
@@ -605,10 +619,16 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 将一轮普通聊天问答追加到当前聊天 Session，并持久化到数据库。
+     * 将一轮普通聊天问答追加到当前聊天 Session 并持久化。首次创建聊天 Session 时，
+     * 通过 session_started 把 ID 返回前端，供后续开始面试或 WebSocket 重连时复用。
+     *
+     * @param ws        当前 WebSocket 业务会话
+     * @param userInput 本轮用户输入
+     * @param reply     本轮助手回复
      */
     private void saveChatTurn(WSSession ws, String userInput, String reply) {
         try {
+            boolean created = ws.chatSession == null;
             Session session = ensureChatSession(ws, userInput);
             LocalDateTime now = LocalDateTime.now();
             session.getChatMessages().add(ConversationMessage.builder()
@@ -625,6 +645,12 @@ public class WebSocketHandler extends TextWebSocketHandler {
                     .build());
             session.setUpdatedAt(now);
             ws.chatSession = sessionRepository.save(session);
+            if (created) {
+                sendServerMsg(ws.conn, ServerMsg.builder()
+                        .type("session_started")
+                        .content(ws.chatSession.getId())
+                        .build());
+            }
             notifySessionsChanged(ws);
         } catch (Exception e) {
             log.warn("[WS] 保存聊天历史失败: {}", e.getMessage());
@@ -737,12 +763,29 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 创建一条进行中的面试会话记录，作为 Redis 缓存恢复和历史列表展示的 MySQL 索引。
+     * 将当前普通聊天升级为面试；没有可复用聊天时才创建新的面试 Session。
+     *
+     * @param currentChatSession 当前 WebSocket 关联的普通聊天 Session，可以为空
+     * @param userId             当前登录用户 ID
+     * @return 已升级的原 Session，或新创建的进行中面试 Session
      */
-    private Session createPendingInterviewSession(String sessionId, String userId) {
+    static Session preparePendingInterviewSession(Session currentChatSession, String userId) {
         LocalDateTime now = LocalDateTime.now();
+        if (currentChatSession != null
+                && Session.TYPE_CHAT.equals(currentChatSession.getSessionType())
+                && userId.equals(currentChatSession.getUserId())) {
+            currentChatSession.setSessionType(Session.TYPE_INTERVIEW);
+            currentChatSession.setStatus(Session.STATUS_INTERVIEWING);
+            currentChatSession.setTitle("进行中的面试");
+            currentChatSession.setUpdatedAt(now);
+            if (currentChatSession.getChatMessages() == null) {
+                currentChatSession.setChatMessages(new ArrayList<>());
+            }
+            return currentChatSession;
+        }
+
         return Session.builder()
-                .id(sessionId)
+                .id(UUID.randomUUID().toString())
                 .title("进行中的面试")
                 .sessionType(Session.TYPE_INTERVIEW)
                 .userId(userId)
@@ -751,6 +794,58 @@ public class WebSocketHandler extends TextWebSocketHandler {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
+    }
+
+    /**
+     * 解析本次面试可以复用的普通聊天 Session。优先使用当前连接内存中的 Session；连接重建后，
+     * 再按前端携带的 Session ID 查询数据库，并校验用户归属和会话类型。
+     *
+     * @param ws                 当前 WebSocket 业务会话
+     * @param requestedSessionId 前端携带的当前 Session ID，可以为空
+     * @return 可升级的普通聊天 Session；不存在、越权或类型不符时返回 null
+     */
+    private Session resolveChatSessionForInterview(WSSession ws, String requestedSessionId) {
+        if (ws.chatSession != null
+                && Session.TYPE_CHAT.equals(ws.chatSession.getSessionType())
+                && ws.userID.equals(ws.chatSession.getUserId())) {
+            return ws.chatSession;
+        }
+        if (requestedSessionId == null || requestedSessionId.isBlank()) {
+            return null;
+        }
+        return sessionRepository.findById(requestedSessionId)
+                .filter(session -> ws.userID.equals(session.getUserId()))
+                .filter(session -> Session.TYPE_CHAT.equals(session.getSessionType()))
+                .orElse(null);
+    }
+
+    /**
+     * 按时间阶段顺序合并面试前聊天消息和面试过程消息，不修改任一输入列表。
+     *
+     * @param first  面试前已经持久化的聊天消息
+     * @param second 面试期间暂存在 Redis 的消息
+     * @return 过滤 null 元素后的新消息列表
+     */
+    static List<ConversationMessage> mergeMessages(List<ConversationMessage> first,
+                                                   List<ConversationMessage> second) {
+        List<ConversationMessage> merged = copyMessages(first);
+        if (second != null) {
+            second.stream().filter(java.util.Objects::nonNull).forEach(merged::add);
+        }
+        return merged;
+    }
+
+    /**
+     * 复制消息列表并过滤 null 元素，防止后续合并修改原集合。
+     *
+     * @param messages 待复制的消息列表，可以为空
+     * @return 可变的新消息列表
+     */
+    private static List<ConversationMessage> copyMessages(List<ConversationMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(messages.stream().filter(java.util.Objects::nonNull).toList());
     }
 
     private String buildInterviewTitle(Session session) {

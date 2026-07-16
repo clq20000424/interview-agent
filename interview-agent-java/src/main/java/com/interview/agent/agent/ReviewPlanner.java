@@ -83,6 +83,13 @@ public class ReviewPlanner {
               ]
             }""";
 
+    /**
+     * 根据面试评估报告生成复习计划。优先使用带工具的 ReactAgent，失败后重试普通模型，
+     * 所有模型路径均失败时返回本地基础计划并标记为降级结果。
+     *
+     * @param report 本次面试的评估报告
+     * @return 复习计划及是否发生本地降级的生成结果
+     */
     public GenerationResult plan(EvaluationReport report) {
         log.info("[ReviewPlanner] 开始生成复习计划");
 
@@ -112,6 +119,13 @@ public class ReviewPlanner {
         return new GenerationResult(buildFallbackPlan(report), true);
     }
 
+    /**
+     * 调用不带外部工具的普通聊天模型生成一次复习计划文本。
+     *
+     * @param userMsg 包含评估报告和输出格式要求的用户消息
+     * @param attempt 当前重试次数，仅用于日志定位
+     * @return 模型文本；调用异常或响应无效时返回 null
+     */
     private String generateSingleTurn(String userMsg, int attempt) {
         try {
             ChatResponse response = chatModel.call(new Prompt(List.of(
@@ -125,6 +139,13 @@ public class ReviewPlanner {
         }
     }
 
+    /**
+     * 从普通模型响应中提取非空文本，并统一校验响应对象的完整性。
+     *
+     * @param response 普通聊天模型响应
+     * @return 非空的模型输出文本
+     * @throws IllegalStateException 响应、生成结果、输出消息或文本为空时抛出
+     */
     private String extractResponseText(ChatResponse response) {
         if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
             throw new IllegalStateException("模型未返回有效响应");
@@ -136,6 +157,14 @@ public class ReviewPlanner {
         return content;
     }
 
+    /**
+     * 尝试把指定来源的模型文本解析为复习计划，解析失败时记录日志并允许调用方继续降级。
+     *
+     * @param content 模型输出文本
+     * @param sessionId 当前面试 Session ID
+     * @param source 输出来源，用于区分 ReactAgent 和普通模型日志
+     * @return 解析成功的复习计划；内容为空或解析失败时返回 null
+     */
     private ReviewPlan tryParsePlan(String content, String sessionId, String source) {
         if (content == null || content.isBlank()) {
             return null;
@@ -236,6 +265,14 @@ public class ReviewPlanner {
                 .build();
     }
 
+    /**
+     * 从维度得分中查找与薄弱主题名称相互包含的得分，找不到时使用总分兜底。
+     *
+     * @param topic 薄弱主题
+     * @param dimensionScores 评估报告中的维度得分
+     * @param defaultScore 未匹配到维度时使用的默认分数
+     * @return 主题对应的维度分数或默认分数
+     */
     private double findTopicScore(String topic, Map<String, Double> dimensionScores, double defaultScore) {
         if (dimensionScores == null || dimensionScores.isEmpty()) {
             return defaultScore;
@@ -252,6 +289,13 @@ public class ReviewPlanner {
                 .orElse(defaultScore);
     }
 
+    /**
+     * 根据主题和分数创建薄弱领域，并按分数区间计算优先级。
+     *
+     * @param topic 薄弱领域名称
+     * @param score 薄弱领域得分
+     * @return 带有 high、medium 或 low 优先级的薄弱领域
+     */
     private ReviewPlan.WeakArea createWeakArea(String topic, double score) {
         String priority = score < 60 ? "high" : score < 75 ? "medium" : "low";
         return ReviewPlan.WeakArea.builder()
@@ -261,6 +305,12 @@ public class ReviewPlanner {
                 .build();
     }
 
+    /**
+     * 为本地降级计划生成不依赖模型和外部链接的可执行学习项。
+     *
+     * @param weakArea 需要复习的薄弱领域
+     * @return 包含目标、行动步骤和时间估算的学习项
+     */
     private ReviewPlan.StudyItem createFallbackStudyItem(ReviewPlan.WeakArea weakArea) {
         String timeEstimate = switch (weakArea.getPriority()) {
             case "high" -> "4 小时";

@@ -100,13 +100,34 @@ public class Orchestrator {
         };
 
         StateGraph graph = new StateGraph(keyStrategyFactory)
-                .addNode("jd_analysis", node_async(s -> { jdAnalysis(c); return Map.of(); }))
-                .addNode("resume_match", node_async(s -> { resumeMatch(c); return Map.of(); }))
-                .addNode("question_plan", node_async(s -> { questionPlan(c); return Map.of(); }))
-                .addNode("interview", node_async(s -> { interview(c); return Map.of(); }))
-                .addNode("weak_review", node_async(s -> { weakReview(c); return Map.of(); }))
-                .addNode("evaluation", node_async(s -> { evaluation(c); return Map.of(); }))
-                .addNode("review_plan", node_async(s -> { reviewPlan(c); return Map.of(); }))
+                .addNode("jd_analysis", node_async(s -> {
+                    jdAnalysis(c);
+                    return Map.of();
+                }))
+                .addNode("resume_match", node_async(s -> {
+                    resumeMatch(c);
+                    return Map.of();
+                }))
+                .addNode("question_plan", node_async(s -> {
+                    questionPlan(c);
+                    return Map.of();
+                }))
+                .addNode("interview", node_async(s -> {
+                    interview(c);
+                    return Map.of();
+                }))
+                .addNode("weak_review", node_async(s -> {
+                    weakReview(c);
+                    return Map.of();
+                }))
+                .addNode("evaluation", node_async(s -> {
+                    evaluation(c);
+                    return Map.of();
+                }))
+                .addNode("review_plan", node_async(s -> {
+                    reviewPlan(c);
+                    return Map.of();
+                }))
                 .addEdge(START, "jd_analysis")
                 .addEdge("jd_analysis", "resume_match")
                 .addEdge("resume_match", "question_plan")
@@ -548,7 +569,10 @@ public class Orchestrator {
     }
 
     /**
-     * 阶段 6：生成复习计划 + 持久化面试记录
+     * 阶段 6：生成复习计划并持久化面试记录。模型路径全部失败时继续使用本地基础计划，
+     * 同时通过阶段回调向前端明确发送降级原因和本次评估的薄弱主题。
+     *
+     * @param c 本次面试上下文，包含评估报告、回调、用户及持久化数据
      */
     private void reviewPlan(Ctx c) {
         c.cb.onStageChange("review_plan", "正在生成复习计划...");
