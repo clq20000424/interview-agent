@@ -34,10 +34,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.*;
 
 /**
@@ -377,43 +374,12 @@ public class WebSocketHandler extends TextWebSocketHandler {
                      */
                     @Override
                     public void onResumeMatch(ResumeMatchResult matchResult) {
-                        // 构建详细的匹配结果消息
-                        StringBuilder detailedMessage = new StringBuilder();
-                        detailedMessage.append("简历匹配分析完成：\n");
-                        detailedMessage.append(String.format("• 综合匹配度：%.0f%%\n", matchResult.getOverallScore()));
-
-                        if (matchResult.getStrengths() != null && !matchResult.getStrengths().isEmpty()) {
-                            detailedMessage.append("\n候选人优势：\n");
-                            for (String strength : matchResult.getStrengths()) {
-                                detailedMessage.append("• ").append(strength).append("\n");
-                            }
-                        }
-
-                        if (matchResult.getWeaknesses() != null && !matchResult.getWeaknesses().isEmpty()) {
-                            detailedMessage.append("\n待提升方面：\n");
-                            for (String weakness : matchResult.getWeaknesses()) {
-                                detailedMessage.append("• ").append(weakness).append("\n");
-                            }
-                        }
-
-                        if (matchResult.getFocusAreas() != null && !matchResult.getFocusAreas().isEmpty()) {
-                            detailedMessage.append("\n面试重点考察方向：\n");
-                            for (String focusArea : matchResult.getFocusAreas()) {
-                                detailedMessage.append("• ").append(focusArea).append("\n");
-                            }
-                        }
-
-                        if (matchResult.getResumeGaps() != null && !matchResult.getResumeGaps().isEmpty()) {
-                            detailedMessage.append("\n简历可深挖点：\n");
-                            for (String gap : matchResult.getResumeGaps()) {
-                                detailedMessage.append("• ").append(gap).append("\n");
-                            }
-                        }
+                        String detailedMessage = formatResumeMatchResult(matchResult);
 
                         // 发送详细匹配结果
                         sendServerMsg(ws.conn, ServerMsg.builder()
                                 .type("resume_match_result")
-                                .content(detailedMessage.toString())
+                                .content(detailedMessage)
                                 .build());
 
                         // 同时发送一个简化版本作为阶段变更消息
@@ -424,7 +390,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
                                 .build());
 
                         // 实时保存详细匹配结果到 Redis
-                        saveMessageToRedis(ws.userID, sessionId, "system", detailedMessage.toString(),
+                        saveMessageToRedis(ws.userID, sessionId, "system", detailedMessage,
                                 Map.of("message_type", "resume_match_result", "overall_score", matchResult.getOverallScore()));
                     }
 
@@ -437,6 +403,17 @@ public class WebSocketHandler extends TextWebSocketHandler {
                                 .type("question").questionNum(questionNum).content(content).build());
                         // 实时保存题目消息到 Redis，包含题号和消息类型元数据
                         saveMessageToRedis(ws.userID, sessionId, "assistant", content, Map.of("question_num", questionNum, "message_type", "question"));
+                    }
+
+                    /**
+                     * 推送并保存低分题目巩固内容。该内容使用独立消息类型，避免被前端显示为第 0 道正式题。
+                     */
+                    @Override
+                    public void onReviewItem(String content) {
+                        sendServerMsg(ws.conn, ServerMsg.builder()
+                                .type("review_item").content(content).build());
+                        saveMessageToRedis(ws.userID, sessionId, "assistant", content,
+                                Map.of("message_type", "review_item"));
                     }
 
                     /**
@@ -994,6 +971,45 @@ public class WebSocketHandler extends TextWebSocketHandler {
         }
 
         return content;
+    }
+
+    /**
+     * 将简历匹配结果格式化为带分段和列表的 Markdown，保证前端展开后易于扫描。
+     *
+     * @param matchResult 简历与岗位的结构化匹配结果
+     * @return 可直接展示和持久化的 Markdown 文本
+     */
+    private String formatResumeMatchResult(ResumeMatchResult matchResult) {
+        StringBuilder content = new StringBuilder();
+        content.append(String.format("**综合匹配度：%.0f%%**%n", matchResult.getOverallScore()));
+        appendMarkdownSection(content, "候选人优势", matchResult.getStrengths());
+        appendMarkdownSection(content, "待提升方面", matchResult.getWeaknesses());
+        appendMarkdownSection(content, "面试重点考察方向", matchResult.getFocusAreas());
+        appendMarkdownSection(content, "简历可深挖点", matchResult.getResumeGaps());
+        return content.toString().trim();
+    }
+
+    /**
+     * 向 Markdown 文本追加一个非空列表章节，过滤模型偶尔返回的空白条目。
+     *
+     * @param content Markdown 内容缓冲区
+     * @param title   章节标题
+     * @param items   章节列表项
+     */
+    private void appendMarkdownSection(StringBuilder content, String title, List<String> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<String> validItems = items.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .toList();
+        if (validItems.isEmpty()) {
+            return;
+        }
+        content.append("\n\n### ").append(title).append('\n');
+        validItems.forEach(item -> content.append("- ").append(item).append('\n'));
     }
 
     /**

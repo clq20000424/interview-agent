@@ -536,7 +536,7 @@ public class Orchestrator {
                     QAPair qa = weakQAs.get(idx);
                     String reviewContent = buildWeakReviewContent(idx, weakQAs.size(), qa, c.userID);
                     if (reviewContent != null) {
-                        c.cb.onQuestion(0, reviewContent);
+                        c.cb.onReviewItem(reviewContent);
                     }
                 }
 

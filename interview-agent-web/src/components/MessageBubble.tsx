@@ -6,8 +6,12 @@ import ReactMarkdown from 'react-markdown'
 import type { ChatMessage } from '../types/message'
 import { ScoreCard } from './ScoreCard'
 import { ReportCard } from './ReportCard'
+import { ResumeMatchCard } from './ResumeMatchCard'
 import { ReviewPlanCard } from './ReviewPlanCard'
 
+/**
+ * 根据持久化消息类型渲染聊天内容，并兼容旧记录中的无效题号。
+ */
 export function MessageBubble({ msg }: { msg: ChatMessage }) {
   if (msg.messageType === 'stage') {
     return (
@@ -100,16 +104,7 @@ export function MessageBubble({ msg }: { msg: ChatMessage }) {
   }
 
   if (msg.messageType === 'resume_match_result') {
-    return (
-      <div className="my-3 mx-4 p-4 bg-green-50 border border-green-200 rounded-xl">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-green-600 font-medium">简历匹配分析</span>
-        </div>
-        <div className="prose prose-sm max-w-none dark:prose-invert">
-          <ReactMarkdown>{msg.content}</ReactMarkdown>
-        </div>
-      </div>
-    )
+    return <ResumeMatchCard content={msg.content} />
   }
 
   const isUser = msg.role === 'user'
@@ -123,7 +118,7 @@ export function MessageBubble({ msg }: { msg: ChatMessage }) {
             : 'bg-gray-100 text-gray-900'
         }`}
       >
-        {msg.messageType === 'question' && (
+        {msg.messageType === 'question' && msg.questionNum !== undefined && msg.questionNum > 0 && (
           <div className="text-xs font-medium opacity-70 mb-1">
             第 {msg.questionNum} 题
           </div>

@@ -20,6 +20,11 @@ public interface InterviewCallbacks {
     void onQuestion(int questionNum, String content);
 
     /**
+     * 低分题目巩固内容回调。巩固内容不是正式面试题，不占用面试题号。
+     */
+    void onReviewItem(String content);
+
+    /**
      * 评分回调
      */
     void onScore(AnswerScore score);

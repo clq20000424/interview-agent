@@ -36,6 +36,7 @@ export type ServerMessage =
     | { type: 'chat_reply'; content: string }
     | { type: 'stage_change'; stage: string; message: string }
     | { type: 'question'; question_num: number; content: string }
+    | { type: 'review_item'; content: string }
     | { type: 'score'; score: number; feedback: string; key_points_hit: string[]; key_points_missed: string[] }
     | { type: 'report'; content: string }
     | { type: 'review_plan'; content: string }
@@ -52,7 +53,7 @@ export interface ChatMessage {
     id: string
     role: 'user' | 'assistant' | 'system'
     content: string
-    messageType: 'text' | 'score' | 'report' | 'review_plan' | 'stage' | 'question' | 'resume_match_result' | 'file' | 'upload_result' | 'rag_evaluation'
+    messageType: 'text' | 'score' | 'report' | 'review_plan' | 'review_item' | 'stage' | 'question' | 'resume_match_result' | 'file' | 'upload_result' | 'rag_evaluation'
     timestamp: number
     score?: number
     feedback?: string

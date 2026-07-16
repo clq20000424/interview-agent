@@ -15,6 +15,7 @@ const KNOWN_MESSAGE_TYPES: ReadonlySet<ChatMessageType> = new Set([
     'score',
     'report',
     'review_plan',
+    'review_item',
     'stage',
     'question',
     'resume_match_result',
