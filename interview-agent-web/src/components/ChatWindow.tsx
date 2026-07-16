@@ -148,6 +148,9 @@ export function ChatWindow({ wsRef }: ChatWindowProps) {
   }
 
   const hasResumeMatchResult = messages.some((message) => message.messageType === 'resume_match_result')
+  const hasRelevantWeakPoints = messages.some((message) => message.messageType === 'memory_weak_points')
+  const hasQuestionDirections = messages.some((message) => message.messageType === 'question_directions')
+  const hasQuestionPlanDetails = messages.some((message) => message.messageType === 'question_plan_details')
 
   return (
     <div className="flex-1 flex flex-col h-screen">
@@ -166,7 +169,13 @@ export function ChatWindow({ wsRef }: ChatWindowProps) {
           const isSupersededResumeStage = hasResumeMatchResult
             && msg.messageType === 'stage'
             && (msg.stage === 'resume_match' || msg.stage === 'resume_match_done')
-          return isSupersededResumeStage ? null : <MessageBubble key={msg.id} msg={msg} />
+          const isSupersededPlanningStage = msg.messageType === 'stage'
+            && ((hasRelevantWeakPoints && msg.stage === 'memory_loaded')
+              || (hasQuestionDirections && msg.stage === 'question_assemble')
+              || (hasQuestionPlanDetails && msg.stage === 'question_plan_done'))
+          return isSupersededResumeStage || isSupersededPlanningStage
+            ? null
+            : <MessageBubble key={msg.id} msg={msg} />
         })}
         <div ref={bottomRef} />
       </div>

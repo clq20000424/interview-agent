@@ -8,6 +8,7 @@ import { ScoreCard } from './ScoreCard'
 import { ReportCard } from './ReportCard'
 import { ResumeMatchCard } from './ResumeMatchCard'
 import { ReviewPlanCard } from './ReviewPlanCard'
+import { PlanningDetailsCard } from './PlanningDetailsCard'
 
 /**
  * 根据持久化消息类型渲染聊天内容，并兼容旧记录中的无效题号。
@@ -33,6 +34,17 @@ export function MessageBubble({ msg }: { msg: ChatMessage }) {
 
   if (msg.messageType === 'review_plan') {
     return <ReviewPlanCard content={msg.content} />
+  }
+
+  if (msg.messageType === 'memory_weak_points'
+    || msg.messageType === 'question_directions'
+    || msg.messageType === 'question_plan_details') {
+    return (
+      <PlanningDetailsCard
+        summary={msg.summary || getPlanningSummary(msg.messageType)}
+        content={msg.content}
+      />
+    )
   }
 
   if (msg.messageType === 'upload_result') {
@@ -129,4 +141,11 @@ export function MessageBubble({ msg }: { msg: ChatMessage }) {
       </div>
     </div>
   )
+}
+
+/** 为缺少历史摘要元数据的结构化规划消息提供兼容标题。 */
+function getPlanningSummary(messageType: ChatMessage['messageType']) {
+  if (messageType === 'memory_weak_points') return '已加载相关历史薄弱点'
+  if (messageType === 'question_directions') return '正在生成面试题目...'
+  return '出题计划完成'
 }
