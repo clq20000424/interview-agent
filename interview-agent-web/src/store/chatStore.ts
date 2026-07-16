@@ -161,6 +161,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 })
                 break
 
+            case 'resume_match_result':
+                get().addMessage({
+                    id: nextId(), role: 'system', content: msg.content,
+                    messageType: 'text', timestamp: now,
+                })
+                break
+
             case 'error':
                 get().addMessage({
                     id: nextId(), role: 'system', content: msg.message,

@@ -183,8 +183,8 @@ public class Orchestrator {
         c.session.setMatchResult(c.matchResult);
         c.session.setStatus(Session.STATUS_RESUME_MATCHED);
 
-        c.cb.onStageChange("resume_match_done",
-                String.format("简历匹配完成，综合匹配度：%.0f%%", c.matchResult.getOverallScore()));
+        // 调用新的简历匹配结果回调，发送详细信息
+        c.cb.onResumeMatch(c.matchResult);
     }
 
     /**

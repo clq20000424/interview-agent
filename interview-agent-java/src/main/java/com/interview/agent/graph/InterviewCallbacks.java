@@ -35,6 +35,11 @@ public interface InterviewCallbacks {
     void onReviewPlan(String plan);
 
     /**
+     * 简历匹配结果回调
+     */
+    void onResumeMatch(com.interview.agent.model.ResumeMatchResult matchResult);
+
+    /**
      * 获取用户回答（阻塞等待）
      */
     String getUserAnswer() throws InterruptedException, UserQuitException;

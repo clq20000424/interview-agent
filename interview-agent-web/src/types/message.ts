@@ -45,6 +45,7 @@ export type ServerMessage =
     | { type: 'sessions_changed' }
     | { type: 'interview_complete' }
     | { type: 'session_started'; content: string }
+    | { type: 'resume_match_result'; content: string }
 
 // UI 展示用的消息
 export interface ChatMessage {

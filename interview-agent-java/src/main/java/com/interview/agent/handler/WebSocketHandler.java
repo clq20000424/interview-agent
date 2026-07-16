@@ -372,6 +372,62 @@ public class WebSocketHandler extends TextWebSocketHandler {
                     }
 
                     /**
+                     * 简历匹配结果回调，发送详细的匹配分析
+                     */
+                    @Override
+                    public void onResumeMatch(ResumeMatchResult matchResult) {
+                        // 构建详细的匹配结果消息
+                        StringBuilder detailedMessage = new StringBuilder();
+                        detailedMessage.append("简历匹配分析完成：\n");
+                        detailedMessage.append(String.format("• 综合匹配度：%.0f%%\n", matchResult.getOverallScore()));
+
+                        if (matchResult.getStrengths() != null && !matchResult.getStrengths().isEmpty()) {
+                            detailedMessage.append("\n候选人优势：\n");
+                            for (String strength : matchResult.getStrengths()) {
+                                detailedMessage.append("• ").append(strength).append("\n");
+                            }
+                        }
+
+                        if (matchResult.getWeaknesses() != null && !matchResult.getWeaknesses().isEmpty()) {
+                            detailedMessage.append("\n待提升方面：\n");
+                            for (String weakness : matchResult.getWeaknesses()) {
+                                detailedMessage.append("• ").append(weakness).append("\n");
+                            }
+                        }
+
+                        if (matchResult.getFocusAreas() != null && !matchResult.getFocusAreas().isEmpty()) {
+                            detailedMessage.append("\n面试重点考察方向：\n");
+                            for (String focusArea : matchResult.getFocusAreas()) {
+                                detailedMessage.append("• ").append(focusArea).append("\n");
+                            }
+                        }
+
+                        if (matchResult.getResumeGaps() != null && !matchResult.getResumeGaps().isEmpty()) {
+                            detailedMessage.append("\n简历可深挖点：\n");
+                            for (String gap : matchResult.getResumeGaps()) {
+                                detailedMessage.append("• ").append(gap).append("\n");
+                            }
+                        }
+
+                        // 发送详细匹配结果
+                        sendServerMsg(ws.conn, ServerMsg.builder()
+                                .type("resume_match_result")
+                                .content(detailedMessage.toString())
+                                .build());
+
+                        // 同时发送一个简化版本作为阶段变更消息
+                        sendServerMsg(ws.conn, ServerMsg.builder()
+                                .type("stage_change")
+                                .stage("resume_match_done")
+                                .message(String.format("简历匹配完成，综合匹配度：%.0f%%", matchResult.getOverallScore()))
+                                .build());
+
+                        // 实时保存详细匹配结果到 Redis
+                        saveMessageToRedis(ws.userID, sessionId, "system", detailedMessage.toString(),
+                                Map.of("message_type", "resume_match_result", "overall_score", matchResult.getOverallScore()));
+                    }
+
+                    /**
                      * 面试官生成新问题时，把题号和题目内容推送给前端。
                      */
                     @Override

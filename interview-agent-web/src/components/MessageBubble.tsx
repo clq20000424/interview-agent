@@ -99,6 +99,20 @@ export function MessageBubble({ msg }: { msg: ChatMessage }) {
     )
   }
 
+  // 处理简历匹配结果消息
+  if (msg.role === 'system' && msg.messageType === 'text' && msg.content.includes('简历匹配分析完成')) {
+    return (
+      <div className="my-3 mx-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-green-600 font-medium">简历匹配分析</span>
+        </div>
+        <div className="prose prose-sm max-w-none dark:prose-invert">
+          <ReactMarkdown>{msg.content}</ReactMarkdown>
+        </div>
+      </div>
+    )
+  }
+
   const isUser = msg.role === 'user'
 
   return (
