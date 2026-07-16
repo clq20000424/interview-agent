@@ -2,7 +2,7 @@
  * @author: 陈龙强
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MessageBubble } from './MessageBubble'
 import { FileUpload } from './FileUpload'
 import { StageIndicator } from './StageIndicator'
@@ -14,6 +14,12 @@ interface ChatWindowProps {
   wsRef: React.RefObject<WSClient | null>
 }
 
+const INPUT_MIN_HEIGHT = 42
+const INPUT_MAX_VIEWPORT_RATIO = 0.4
+
+/**
+ * 展示会话消息和输入区，并处理普通聊天、面试回答及文件上传交互。
+ */
 export function ChatWindow({ wsRef }: ChatWindowProps) {
   const { messages, isInterviewing, currentSessionId } = useChatStore()
   const [input, setInput] = useState('')
@@ -27,10 +33,23 @@ export function ChatWindow({ wsRef }: ChatWindowProps) {
   const questionFileRef = useRef<HTMLInputElement>(null)
   const [uploadingQuestions, setUploadingQuestions] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // 输入内容换行时同步增加高度；达到视口 40% 后固定高度并启用内部滚动。
+  useLayoutEffect(() => {
+    const textarea = inputRef.current
+    if (!textarea) return
+
+    textarea.style.height = 'auto'
+    const maxHeight = Math.max(INPUT_MIN_HEIGHT, window.innerHeight * INPUT_MAX_VIEWPORT_RATIO)
+    const nextHeight = Math.min(maxHeight, Math.max(INPUT_MIN_HEIGHT, textarea.scrollHeight))
+    textarea.style.height = `${nextHeight}px`
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+  }, [input])
 
   const send = (msg: ClientMessage) => {
     wsRef.current?.send(msg)
@@ -274,12 +293,13 @@ export function ChatWindow({ wsRef }: ChatWindowProps) {
             </svg>
           </button>
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={isInterviewing ? '输入你的回答...' : '输入消息、粘贴链接或上传文件...'}
             rows={1}
-            className="flex-1 border rounded-xl px-4 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="min-h-[42px] flex-1 resize-none overflow-y-hidden rounded-xl border px-4 py-2 text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
             onClick={handleSend}
