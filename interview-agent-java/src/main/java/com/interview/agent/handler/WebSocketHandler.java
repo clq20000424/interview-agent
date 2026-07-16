@@ -22,6 +22,7 @@ import com.interview.agent.skill.*;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Component;
@@ -333,7 +334,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
         Boolean originalPinned = pendingSession.getPinned();
         LocalDateTime originalPinnedAt = pendingSession.getPinnedAt();
 
-        // 面试结束后的普通聊天应新建 Session，不能继续追加到已升级的面试记录。
+        // 面试执行期间暂停普通聊天关联，结束持久化后再把同一 Session 挂回去继续对话。
         ws.chatSession = null;
         ws.chatHistory.clear();
         ws.activeSkill = null;
@@ -466,12 +467,16 @@ public class WebSocketHandler extends TextWebSocketHandler {
                             log.info("[WS] 合并 {} 条原聊天消息和 {} 条面试消息到会话",
                                     preInterviewMessages.size(), cachedMessages.size());
                         }
-                        sessionRepository.save(session);
+                        session = sessionRepository.save(session);
                         log.info("[WS] 会话已保存: sessionId={}, userId={}", session.getId(), ws.userID);
                         // 持久化成功后清除 Redis 缓存，释放内存
                         sessionCacheService.clearSessionCache(ws.userID, sessionId);
                     } catch (Exception e) {
                         log.warn("[WS] 保存会话失败: {}", e.getMessage());
+                    } finally {
+                        // 保留当前面试上下文，允许用户在面试结束后继续追问刚才的题目。
+                        ws.chatSession = session;
+                        ws.chatHistory = buildChatHistory(session.getChatMessages());
                     }
                 }
                 sendServerMsg(ws.conn, ServerMsg.builder().type("interview_complete").build());
@@ -680,23 +685,15 @@ public class WebSocketHandler extends TextWebSocketHandler {
 
             ws.activeSkill = null;
             ws.skillState = null;
-            ws.chatHistory.clear();
-
             if (Session.TYPE_CHAT.equals(session.getSessionType()) || session.getChatMessages() != null) {
                 if (session.getChatMessages() == null) {
                     session.setChatMessages(new ArrayList<>());
                 }
                 ws.chatSession = session;
-                for (ConversationMessage message : session.getChatMessages()) {
-                    if ("user".equals(message.getRole())) {
-                        ws.chatHistory.add(new UserMessage(message.getContent()));
-                    } else if ("assistant".equals(message.getRole())) {
-                        ws.chatHistory.add(new AssistantMessage(message.getContent()));
-                    }
-                }
-                trimChatHistory(ws);
+                ws.chatHistory = buildChatHistory(session.getChatMessages());
             } else {
                 ws.chatSession = null;
+                ws.chatHistory.clear();
             }
         } catch (Exception e) {
             log.warn("[WS] 加载历史会话失败: {}", e.getMessage());
@@ -740,7 +737,12 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 获取当前普通聊天 Session；不存在时用第一条用户输入创建新的聊天 Session。
+     * 获取当前可继续对话的 Session，包括已完成的面试 Session；不存在时才根据第一条输入
+     * 创建新的普通聊天 Session。
+     *
+     * @param ws         当前 WebSocket 业务会话
+     * @param firstInput 新建普通聊天时用于生成标题的第一条输入
+     * @return 当前可追加消息的 Session
      */
     private Session ensureChatSession(WSSession ws, String firstInput) {
         if (ws.chatSession != null) {
@@ -833,6 +835,32 @@ public class WebSocketHandler extends TextWebSocketHandler {
             second.stream().filter(java.util.Objects::nonNull).forEach(merged::add);
         }
         return merged;
+    }
+
+    /**
+     * 从已持久化会话消息重建 ChatAgent 上下文。保留用户回答、助手问题/报告以及评分反馈，
+     * 跳过阶段进度等系统噪声，并限制为最近 20 条以控制模型上下文长度。
+     *
+     * @param messages 当前 Session 的完整消息
+     * @return 可直接传给 ChatAgent 的最近消息列表
+     */
+    static List<Message> buildChatHistory(List<ConversationMessage> messages) {
+        List<Message> history = new ArrayList<>();
+        if (messages != null) {
+            for (ConversationMessage message : messages) {
+                if (message == null || message.getContent() == null || message.getContent().isBlank()) {
+                    continue;
+                }
+                if ("user".equals(message.getRole())) {
+                    history.add(new UserMessage(message.getContent()));
+                } else if ("assistant".equals(message.getRole())
+                        || ("system".equals(message.getRole()) && "score".equals(message.getMessageType()))) {
+                    history.add(new AssistantMessage(message.getContent()));
+                }
+            }
+        }
+        int fromIndex = Math.max(0, history.size() - 20);
+        return new ArrayList<>(history.subList(fromIndex, history.size()));
     }
 
     /**
