@@ -702,10 +702,23 @@ public class WebSocketHandler extends TextWebSocketHandler {
             }
 
             List<ConversationMessage> cachedMessages = sessionCacheService.getMessages(ws.userID, sessionId);
-            session.setChatMessages(mergeMessages(session.getChatMessages(), cachedMessages));
+            String terminationMessage = "面试已终止，已有消息已保存";
+            LocalDateTime terminatedAt = LocalDateTime.now();
+            List<ConversationMessage> allMessages = mergeMessages(session.getChatMessages(), cachedMessages);
+
+            // 孤儿面试不会再经过正常回调，因此终止阶段消息必须在清理 Redis 前直接写入 MySQL 会话。
+            allMessages.add(ConversationMessage.builder()
+                    .role("system")
+                    .content(terminationMessage)
+                    .messageType("stage")
+                    .metadata(Map.of("message_type", "stage", "stage", "terminated"))
+                    .createdAt(terminatedAt)
+                    .build());
+            session.setChatMessages(allMessages);
             session.setStatus(Session.STATUS_TERMINATED);
-            session.setUpdatedAt(LocalDateTime.now());
+            session.setUpdatedAt(terminatedAt);
             Session saved = sessionRepository.save(session);
+
             try {
                 sessionCacheService.clearSessionCache(ws.userID, sessionId);
             } catch (Exception cacheError) {
@@ -718,7 +731,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
             ws.chatHistory = buildChatHistory(saved.getChatMessages());
             sendServerMsg(ws.conn, ServerMsg.builder()
                     .type("stage_change").stage("terminated")
-                    .message("面试已终止，已有消息已保存").build());
+                    .message(terminationMessage).build());
             sendServerMsg(ws.conn, ServerMsg.builder().type("interview_complete").build());
             notifySessionsChanged(ws);
             log.info("[WS] 已终止后端重启遗留的孤儿面试: userId={}, sessionId={}, cachedMessages={}",
