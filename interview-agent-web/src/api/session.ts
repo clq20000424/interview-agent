@@ -3,6 +3,7 @@
  * @author 陈龙强
  */
 import {deleteWithAuth, getWithAuth, patchWithAuth} from './auth'
+import type {ChatMessage} from '../types/message'
 
 export interface SessionSummary {
     id: string
@@ -36,7 +37,8 @@ export interface SessionQA {
 export interface ConversationMessage {
     role: 'user' | 'assistant' | 'system'
     content: string
-    message_type?: 'text'
+    message_type?: ChatMessage['messageType']
+    metadata?: Record<string, unknown>
     created_at?: string
 }
 

@@ -7,6 +7,7 @@ import com.interview.agent.model.JDAnalysis;
 import com.interview.agent.model.Session;
 import com.interview.agent.repository.SessionRepository;
 import com.interview.agent.service.SessionCacheService;
+import com.interview.agent.service.SessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -34,6 +35,7 @@ public class SessionController {
 
     private final SessionRepository sessionRepository;
     private final SessionCacheService sessionCacheService;
+    private final SessionService sessionService;
 
     /**
      * 获取当前用户的所有会话列表
@@ -133,7 +135,12 @@ public class SessionController {
     }
 
     /**
-     * 删除指定会话
+     * 删除指定会话及其在 MySQL、Redis、长短期记忆中的关联数据。进行中的面试会继续写入，
+     * 为避免删除后被异步任务重新创建，必须先终止面试再删除。
+     *
+     * @param id 待删除的 Session ID
+     * @param username 当前登录用户名
+     * @return 删除成功返回 204；越权、会话不存在或仍在运行时返回对应错误
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteSession(@PathVariable String id, @RequestAttribute("username") String username) {
@@ -148,8 +155,12 @@ public class SessionController {
                 return ResponseEntity.status(403).body(Map.of("error", "无权删除该会话"));
             }
 
-            sessionRepository.delete(session);
-            log.info("[Session] 用户 {} 删除了会话 {}", username, id);
+            if (Session.STATUS_INTERVIEWING.equals(session.getStatus())) {
+                return ResponseEntity.status(409).body(Map.of("error", "面试正在进行中，请先终止面试再删除"));
+            }
+
+            sessionService.delete(session);
+            log.info("[Session] 用户 {} 删除了会话及关联数据 {}", username, id);
             return ResponseEntity.noContent().build();
         } catch (Exception e) {
             log.error("[Session] 删除会话失败: {}", e.getMessage(), e);

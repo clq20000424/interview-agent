@@ -153,6 +153,31 @@ public class LongTermMemory {
     }
 
     /**
+     * 从内存画像和组合存储中移除指定面试历史。薄弱点是跨会话聚合结果，无法按单次会话
+     * 准确回滚，因此这里只删除 interviewHist 中可明确归属到 Session 的记录。
+     *
+     * @param userID 会话所属用户 ID
+     * @param sessionId 待删除的 Session ID
+     * @return 是否找到并删除了历史记录
+     */
+    public boolean removeInterviewRecord(String userID, String sessionId) {
+        UserProfile profile = getProfile(userID);
+        boolean removed;
+        synchronized (profile) {
+            List<UserProfile.InterviewRecord> history = profile.getInterviewHist();
+            removed = history != null && history.removeIf(record ->
+                    record != null && sessionId.equals(record.getSessionId()));
+            if (removed) {
+                profile.setUpdatedAt(LocalDateTime.now());
+            }
+        }
+        if (removed && store != null) {
+            store.saveProfile(profile);
+        }
+        return removed;
+    }
+
+    /**
      * 获取用户的薄弱点（淘汰过期 + 按分数排序 + Top N）
      */
     public List<UserProfile.WeakPoint> getWeakPoints(String userID) {

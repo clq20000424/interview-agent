@@ -61,6 +61,16 @@ public class RedisStore {
     }
 
     /**
+     * 删除旧版单值 Session 缓存。当前实时会话主要由 SessionCacheService 管理 Hash，
+     * 保留此清理可兼容历史数据和 CombinedStore 的 Session API。
+     *
+     * @param sessionId 待删除的 Session ID
+     */
+    public void deleteSession(String sessionId) {
+        redisTemplate.delete(SESSION_PREFIX + sessionId);
+    }
+
+    /**
      * 获取文件 hash（用于题库上传去重）
      */
     public String getFileHash(String userId, String filename) {

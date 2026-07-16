@@ -22,6 +22,7 @@ import com.interview.agent.skill.*;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Component;
@@ -33,10 +34,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.*;
 
 /**
@@ -333,7 +331,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
         Boolean originalPinned = pendingSession.getPinned();
         LocalDateTime originalPinnedAt = pendingSession.getPinnedAt();
 
-        // 面试结束后的普通聊天应新建 Session，不能继续追加到已升级的面试记录。
+        // 面试执行期间暂停普通聊天关联，结束持久化后再把同一 Session 挂回去继续对话。
         ws.chatSession = null;
         ws.chatHistory.clear();
         ws.activeSkill = null;
@@ -367,7 +365,33 @@ public class WebSocketHandler extends TextWebSocketHandler {
                         sendServerMsg(ws.conn, ServerMsg.builder()
                                 .type("stage_change").stage(stage).message(message).build());
                         // 实时保存阶段变化消息到 Redis，防止刷新丢失
-                        saveMessageToRedis(ws.userID, sessionId, "system", message, Map.of("stage", stage));
+                        saveMessageToRedis(ws.userID, sessionId, "system", message,
+                                Map.of("message_type", "stage", "stage", stage));
+                    }
+
+                    /**
+                     * 简历匹配结果回调，发送详细的匹配分析
+                     */
+                    @Override
+                    public void onResumeMatch(ResumeMatchResult matchResult) {
+                        String detailedMessage = formatResumeMatchResult(matchResult);
+
+                        // 发送详细匹配结果
+                        sendServerMsg(ws.conn, ServerMsg.builder()
+                                .type("resume_match_result")
+                                .content(detailedMessage)
+                                .build());
+
+                        // 同时发送一个简化版本作为阶段变更消息
+                        sendServerMsg(ws.conn, ServerMsg.builder()
+                                .type("stage_change")
+                                .stage("resume_match_done")
+                                .message(String.format("简历匹配完成，综合匹配度：%.0f%%", matchResult.getOverallScore()))
+                                .build());
+
+                        // 实时保存详细匹配结果到 Redis
+                        saveMessageToRedis(ws.userID, sessionId, "system", detailedMessage,
+                                Map.of("message_type", "resume_match_result", "overall_score", matchResult.getOverallScore()));
                     }
 
                     /**
@@ -379,6 +403,17 @@ public class WebSocketHandler extends TextWebSocketHandler {
                                 .type("question").questionNum(questionNum).content(content).build());
                         // 实时保存题目消息到 Redis，包含题号和消息类型元数据
                         saveMessageToRedis(ws.userID, sessionId, "assistant", content, Map.of("question_num", questionNum, "message_type", "question"));
+                    }
+
+                    /**
+                     * 推送并保存低分题目巩固内容。该内容使用独立消息类型，避免被前端显示为第 0 道正式题。
+                     */
+                    @Override
+                    public void onReviewItem(String content) {
+                        sendServerMsg(ws.conn, ServerMsg.builder()
+                                .type("review_item").content(content).build());
+                        saveMessageToRedis(ws.userID, sessionId, "assistant", content,
+                                Map.of("message_type", "review_item"));
                     }
 
                     /**
@@ -466,12 +501,16 @@ public class WebSocketHandler extends TextWebSocketHandler {
                             log.info("[WS] 合并 {} 条原聊天消息和 {} 条面试消息到会话",
                                     preInterviewMessages.size(), cachedMessages.size());
                         }
-                        sessionRepository.save(session);
+                        session = sessionRepository.save(session);
                         log.info("[WS] 会话已保存: sessionId={}, userId={}", session.getId(), ws.userID);
                         // 持久化成功后清除 Redis 缓存，释放内存
                         sessionCacheService.clearSessionCache(ws.userID, sessionId);
                     } catch (Exception e) {
                         log.warn("[WS] 保存会话失败: {}", e.getMessage());
+                    } finally {
+                        // 保留当前面试上下文，允许用户在面试结束后继续追问刚才的题目。
+                        ws.chatSession = session;
+                        ws.chatHistory = buildChatHistory(session.getChatMessages());
                     }
                 }
                 sendServerMsg(ws.conn, ServerMsg.builder().type("interview_complete").build());
@@ -680,23 +719,15 @@ public class WebSocketHandler extends TextWebSocketHandler {
 
             ws.activeSkill = null;
             ws.skillState = null;
-            ws.chatHistory.clear();
-
             if (Session.TYPE_CHAT.equals(session.getSessionType()) || session.getChatMessages() != null) {
                 if (session.getChatMessages() == null) {
                     session.setChatMessages(new ArrayList<>());
                 }
                 ws.chatSession = session;
-                for (ConversationMessage message : session.getChatMessages()) {
-                    if ("user".equals(message.getRole())) {
-                        ws.chatHistory.add(new UserMessage(message.getContent()));
-                    } else if ("assistant".equals(message.getRole())) {
-                        ws.chatHistory.add(new AssistantMessage(message.getContent()));
-                    }
-                }
-                trimChatHistory(ws);
+                ws.chatHistory = buildChatHistory(session.getChatMessages());
             } else {
                 ws.chatSession = null;
+                ws.chatHistory.clear();
             }
         } catch (Exception e) {
             log.warn("[WS] 加载历史会话失败: {}", e.getMessage());
@@ -740,7 +771,12 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 获取当前普通聊天 Session；不存在时用第一条用户输入创建新的聊天 Session。
+     * 获取当前可继续对话的 Session，包括已完成的面试 Session；不存在时才根据第一条输入
+     * 创建新的普通聊天 Session。
+     *
+     * @param ws         当前 WebSocket 业务会话
+     * @param firstInput 新建普通聊天时用于生成标题的第一条输入
+     * @return 当前可追加消息的 Session
      */
     private Session ensureChatSession(WSSession ws, String firstInput) {
         if (ws.chatSession != null) {
@@ -836,6 +872,32 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
+     * 从已持久化会话消息重建 ChatAgent 上下文。保留用户回答、助手问题/报告以及评分反馈，
+     * 跳过阶段进度等系统噪声，并限制为最近 20 条以控制模型上下文长度。
+     *
+     * @param messages 当前 Session 的完整消息
+     * @return 可直接传给 ChatAgent 的最近消息列表
+     */
+    static List<Message> buildChatHistory(List<ConversationMessage> messages) {
+        List<Message> history = new ArrayList<>();
+        if (messages != null) {
+            for (ConversationMessage message : messages) {
+                if (message == null || message.getContent() == null || message.getContent().isBlank()) {
+                    continue;
+                }
+                if ("user".equals(message.getRole())) {
+                    history.add(new UserMessage(message.getContent()));
+                } else if ("assistant".equals(message.getRole())
+                        || ("system".equals(message.getRole()) && "score".equals(message.getMessageType()))) {
+                    history.add(new AssistantMessage(message.getContent()));
+                }
+            }
+        }
+        int fromIndex = Math.max(0, history.size() - 20);
+        return new ArrayList<>(history.subList(fromIndex, history.size()));
+    }
+
+    /**
      * 复制消息列表并过滤 null 元素，防止后续合并修改原集合。
      *
      * @param messages 待复制的消息列表，可以为空
@@ -912,6 +974,45 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
+     * 将简历匹配结果格式化为带分段和列表的 Markdown，保证前端展开后易于扫描。
+     *
+     * @param matchResult 简历与岗位的结构化匹配结果
+     * @return 可直接展示和持久化的 Markdown 文本
+     */
+    private String formatResumeMatchResult(ResumeMatchResult matchResult) {
+        StringBuilder content = new StringBuilder();
+        content.append(String.format("**综合匹配度：%.0f%%**%n", matchResult.getOverallScore()));
+        appendMarkdownSection(content, "候选人优势", matchResult.getStrengths());
+        appendMarkdownSection(content, "待提升方面", matchResult.getWeaknesses());
+        appendMarkdownSection(content, "面试重点考察方向", matchResult.getFocusAreas());
+        appendMarkdownSection(content, "简历可深挖点", matchResult.getResumeGaps());
+        return content.toString().trim();
+    }
+
+    /**
+     * 向 Markdown 文本追加一个非空列表章节，过滤模型偶尔返回的空白条目。
+     *
+     * @param content Markdown 内容缓冲区
+     * @param title   章节标题
+     * @param items   章节列表项
+     */
+    private void appendMarkdownSection(StringBuilder content, String title, List<String> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<String> validItems = items.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .toList();
+        if (validItems.isEmpty()) {
+            return;
+        }
+        content.append("\n\n### ").append(title).append('\n');
+        validItems.forEach(item -> content.append("- ").append(item).append('\n'));
+    }
+
+    /**
      * 将服务端消息序列化为 JSON 并发送到指定 WebSocket 连接。
      */
     private void sendServerMsg(WebSocketSession session, ServerMsg msg) {
@@ -981,6 +1082,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
                     .role(role)
                     .content(content)
                     .messageType(metadata.getOrDefault("message_type", "text").toString())
+                    .metadata(new java.util.HashMap<>(metadata))
                     .createdAt(LocalDateTime.now())
                     .build();
             sessionCacheService.saveMessage(userId, sessionId, msg);

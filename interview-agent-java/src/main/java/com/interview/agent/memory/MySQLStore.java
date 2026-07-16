@@ -151,4 +151,22 @@ public class MySQLStore {
             log.error("[MySQLStore] 保存面试记录失败: {}", e.getMessage());
         }
     }
+
+    /**
+     * 删除指定用户、指定 Session 对应的独立面试记录，避免删除 sessions 主记录后留下孤儿数据。
+     *
+     * @param userId 会话所属用户 ID
+     * @param sessionId 待删除的 Session ID
+     * @return 实际删除的记录数
+     */
+    @Transactional
+    public int deleteInterviewRecord(String userId, String sessionId) {
+        return entityManager.createNativeQuery("""
+                            DELETE FROM interview_records
+                            WHERE user_id = :userId AND session_id = :sessionId
+                        """)
+                .setParameter("userId", userId)
+                .setParameter("sessionId", sessionId)
+                .executeUpdate();
+    }
 }

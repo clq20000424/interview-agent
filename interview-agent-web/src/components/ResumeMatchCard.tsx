@@ -1,0 +1,44 @@
+import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+
+/**
+ * 将新旧版本的简历匹配文本统一为标准 Markdown，兼容历史消息中的圆点列表和普通章节标题。
+ */
+function normalizeResumeMatchMarkdown(content: string) {
+  return content
+    .replace(/\r\n/g, '\n')
+    .replace(/^简历匹配分析完成：\s*\n?/, '')
+    .replace(/^•\s*(综合匹配度：[^\n]+)$/m, '**$1**')
+    .replace(/^(候选人优势|待提升方面|面试重点考察方向|简历可深挖点)：\s*$/gm, '### $1')
+    .replace(/^•\s*/gm, '- ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/**
+ * 以默认收起的面板展示简历匹配分析，展开后按标题和列表排版详细内容。
+ */
+export function ResumeMatchCard({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const markdown = normalizeResumeMatchMarkdown(content)
+
+  return (
+    <div className="mx-4 my-3 overflow-hidden rounded-xl border border-green-200 bg-green-50">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-green-100"
+      >
+        <span className="font-medium text-green-800">简历匹配分析</span>
+        <span className="text-sm text-green-600">{expanded ? '收起' : '展开'}</span>
+      </button>
+
+      {expanded && (
+        <div className="break-words px-5 pb-5 text-sm leading-7 text-gray-700 [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-green-800 [&_li]:pl-1 [&_p]:my-3 [&_strong]:font-semibold [&_strong]:text-gray-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5">
+          <ReactMarkdown>{markdown}</ReactMarkdown>
+        </div>
+      )}
+    </div>
+  )
+}

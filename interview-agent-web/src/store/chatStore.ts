@@ -108,6 +108,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 })
                 break
 
+            case 'review_item':
+                // 巩固内容不是一道新的面试题，单独记录类型并由内容中的序号展示进度。
+                get().addMessage({
+                    id: nextId(), role: 'assistant', content: msg.content,
+                    messageType: 'review_item', timestamp: now,
+                })
+                break
+
             case 'score':
                 get().addMessage({
                     id: nextId(), role: 'system', content: msg.feedback,
@@ -158,6 +166,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     id: nextId(), role: 'system', content: msg.rag_evaluation.summary,
                     messageType: 'rag_evaluation', timestamp: now,
                     ragEvaluation: msg.rag_evaluation,
+                })
+                break
+
+            case 'resume_match_result':
+                get().addMessage({
+                    id: nextId(), role: 'system', content: msg.content,
+                    messageType: 'resume_match_result', timestamp: now,
                 })
                 break
 
