@@ -147,6 +147,11 @@ export function ChatWindow({ wsRef }: ChatWindowProps) {
     setResumeFile(null)
   }
 
+  const hasResumeMatchResult = messages.some((message) => message.messageType === 'resume_match_result')
+  const hasRelevantWeakPoints = messages.some((message) => message.messageType === 'memory_weak_points')
+  const hasQuestionDirections = messages.some((message) => message.messageType === 'question_directions')
+  const hasQuestionPlanDetails = messages.some((message) => message.messageType === 'question_plan_details')
+
   return (
     <div className="flex-1 flex flex-col h-screen">
       <StageIndicator />
@@ -159,9 +164,19 @@ export function ChatWindow({ wsRef }: ChatWindowProps) {
             <p className="text-sm">输入消息开始聊天，或点击下方按钮开始模拟面试</p>
           </div>
         )}
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} />
-        ))}
+        {messages.map((msg) => {
+          // 结果到达后由可展开的完成节点承载状态，隐藏已经失效的处理中/完成提示，避免重复展示。
+          const isSupersededResumeStage = hasResumeMatchResult
+            && msg.messageType === 'stage'
+            && (msg.stage === 'resume_match' || msg.stage === 'resume_match_done')
+          const isSupersededPlanningStage = msg.messageType === 'stage'
+            && ((hasRelevantWeakPoints && msg.stage === 'memory_loaded')
+              || (hasQuestionDirections && msg.stage === 'question_assemble')
+              || (hasQuestionPlanDetails && msg.stage === 'question_plan_done'))
+          return isSupersededResumeStage || isSupersededPlanningStage
+            ? null
+            : <MessageBubble key={msg.id} msg={msg} />
+        })}
         <div ref={bottomRef} />
       </div>
 

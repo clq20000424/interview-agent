@@ -417,6 +417,44 @@ public class WebSocketHandler extends TextWebSocketHandler {
                     }
 
                     /**
+                     * 推送并保存待生成题目的方向列表，使规划阶段可以展开查看结构化明细。
+                     */
+                    @Override
+                    public void onQuestionDirections(String summary, QuestionDirectionPlan plan) {
+                        String content = formatQuestionDirections(plan);
+                        sendServerMsg(ws.conn, ServerMsg.builder()
+                                .type("question_directions").message(summary).content(content).build());
+                        saveMessageToRedis(ws.userID, sessionId, "system", content,
+                                Map.of("message_type", "question_directions", "summary", summary));
+                    }
+
+                    /**
+                     * 推送并保存最终出题计划摘要，只展示技能、难度和来源，避免提前暴露题干。
+                     */
+                    @Override
+                    public void onQuestionPlan(String summary, QuestionPlan plan) {
+                        String content = formatQuestionPlan(plan);
+                        sendServerMsg(ws.conn, ServerMsg.builder()
+                                .type("question_plan_details").message(summary).content(content).build());
+                        saveMessageToRedis(ws.userID, sessionId, "system", content,
+                                Map.of("message_type", "question_plan_details", "summary", summary));
+                    }
+
+                    /**
+                     * 推送并保存与当前 JD 相关的历史薄弱点，作为本次针对性出题的可解释依据。
+                     */
+                    @Override
+                    public void onRelevantWeakPoints(String summary, List<String> details) {
+                        String content = details == null || details.isEmpty()
+                                ? "暂无可展示的历史薄弱点"
+                                : String.join("\n", details);
+                        sendServerMsg(ws.conn, ServerMsg.builder()
+                                .type("memory_weak_points").message(summary).content(content).build());
+                        saveMessageToRedis(ws.userID, sessionId, "system", content,
+                                Map.of("message_type", "memory_weak_points", "summary", summary));
+                    }
+
+                    /**
                      * 用户回答完成评分后，把分数、反馈和命中/遗漏要点推送给前端。
                      */
                     @Override
@@ -627,14 +665,82 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 用户主动终止面试
+     * 用户主动终止面试。运行线程仍在时向回答队列发送退出指令；服务重启导致线程丢失时，
+     * 将 Redis 已有消息落库并把会话修正为 terminated，解除无法终止也无法删除的状态。
+     *
+     * @param ws  当前 WebSocket 会话
+     * @param msg 包含待终止 Session ID 的客户端消息
      */
     private void handleQuitInterview(WSSession ws, ClientMsg msg) {
         WSSession target = resolveRunningInterviewSession(ws, msg.getSessionId());
         if (target != null && target.interviewRunning) {
             target.answerCh.offer("/quit");
-        } else {
+        } else if (!terminateInterruptedInterview(ws, msg.getSessionId())) {
             sendServerMsg(ws.conn, ServerMsg.builder().type("error").message("当前没有进行中的面试").build());
+        }
+    }
+
+    /**
+     * 终止后端重启后遗留的孤儿面试：校验归属，合并 MySQL/Redis 消息，更新状态并清理缓存。
+     * 该分支只处理数据库仍标记为 interviewing、但当前进程没有运行任务的会话。
+     *
+     * @param ws        当前 WebSocket 会话
+     * @param sessionId 待修正的会话 ID
+     * @return 已处理该请求时返回 true；会话不存在、越权或不是进行中状态时返回 false
+     */
+    private boolean terminateInterruptedInterview(WSSession ws, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return false;
+        }
+        try {
+            Session session = sessionRepository.findById(sessionId)
+                    .filter(candidate -> ws.userID.equals(candidate.getUserId()))
+                    .filter(candidate -> Session.STATUS_INTERVIEWING.equals(candidate.getStatus()))
+                    .orElse(null);
+            if (session == null) {
+                return false;
+            }
+
+            List<ConversationMessage> cachedMessages = sessionCacheService.getMessages(ws.userID, sessionId);
+            String terminationMessage = "面试已终止，已有消息已保存";
+            LocalDateTime terminatedAt = LocalDateTime.now();
+            List<ConversationMessage> allMessages = mergeMessages(session.getChatMessages(), cachedMessages);
+
+            // 孤儿面试不会再经过正常回调，因此终止阶段消息必须在清理 Redis 前直接写入 MySQL 会话。
+            allMessages.add(ConversationMessage.builder()
+                    .role("system")
+                    .content(terminationMessage)
+                    .messageType("stage")
+                    .metadata(Map.of("message_type", "stage", "stage", "terminated"))
+                    .createdAt(terminatedAt)
+                    .build());
+            session.setChatMessages(allMessages);
+            session.setStatus(Session.STATUS_TERMINATED);
+            session.setUpdatedAt(terminatedAt);
+            Session saved = sessionRepository.save(session);
+
+            try {
+                sessionCacheService.clearSessionCache(ws.userID, sessionId);
+            } catch (Exception cacheError) {
+                log.warn("[WS] 孤儿面试已终止，但清理缓存失败: sessionId={}, error={}",
+                        sessionId, cacheError.getMessage());
+            }
+
+            ws.interviewRunning = false;
+            ws.chatSession = saved;
+            ws.chatHistory = buildChatHistory(saved.getChatMessages());
+            sendServerMsg(ws.conn, ServerMsg.builder()
+                    .type("stage_change").stage("terminated")
+                    .message(terminationMessage).build());
+            sendServerMsg(ws.conn, ServerMsg.builder().type("interview_complete").build());
+            notifySessionsChanged(ws);
+            log.info("[WS] 已终止后端重启遗留的孤儿面试: userId={}, sessionId={}, cachedMessages={}",
+                    ws.userID, sessionId, cachedMessages.size());
+            return true;
+        } catch (Exception e) {
+            log.error("[WS] 终止孤儿面试失败: sessionId={}", sessionId, e);
+            sendServerMsg(ws.conn, ServerMsg.builder().type("error").message("终止面试失败，请稍后重试").build());
+            return true;
         }
     }
 
@@ -1011,6 +1117,101 @@ public class WebSocketHandler extends TextWebSocketHandler {
         }
         content.append("\n\n### ").append(title).append('\n');
         validItems.forEach(item -> content.append("- ").append(item).append('\n'));
+    }
+
+    /**
+     * 把出题方向格式化为编号 Markdown 列表，展示主题、题型、难度和关联技能。
+     *
+     * @param plan 待交给模型生成题目的方向计划
+     * @return 可在规划节点中展开的 Markdown
+     */
+    private String formatQuestionDirections(QuestionDirectionPlan plan) {
+        if (plan == null || plan.getDirections() == null || plan.getDirections().isEmpty()) {
+            return "暂无可展示的出题方向";
+        }
+        StringBuilder content = new StringBuilder();
+        for (int index = 0; index < plan.getDirections().size(); index++) {
+            QuestionDirection direction = plan.getDirections().get(index);
+            if (direction == null) {
+                continue;
+            }
+            String topic = direction.getTopic() == null || direction.getTopic().isBlank()
+                    ? "未命名方向" : direction.getTopic().trim();
+            content.append(index + 1).append(". **").append(topic).append("**")
+                    .append("（").append(questionTypeLabel(direction.getType()))
+                    .append(" / ").append(difficultyLabel(direction.getDifficulty())).append("）");
+            if (direction.getSkills() != null && !direction.getSkills().isEmpty()) {
+                content.append(" · 技能：").append(String.join("、", direction.getSkills()));
+            }
+            content.append('\n');
+        }
+        return content.toString().trim();
+    }
+
+    /**
+     * 把最终题目按题型分组为计划摘要，只输出考察技能、难度和来源，不输出完整题干。
+     *
+     * @param plan 已组装完成的出题计划
+     * @return 可在计划完成节点中展开的 Markdown
+     */
+    private String formatQuestionPlan(QuestionPlan plan) {
+        if (plan == null || plan.getQuestions() == null || plan.getQuestions().isEmpty()) {
+            return "暂无可展示的出题计划";
+        }
+        StringBuilder content = new StringBuilder();
+        appendQuestionPlanGroup(content, "基础题", "basic", plan.getQuestions());
+        appendQuestionPlanGroup(content, "经历题", "experience", plan.getQuestions());
+        appendQuestionPlanGroup(content, "设计题", "design", plan.getQuestions());
+        return content.toString().trim();
+    }
+
+    /**
+     * 向计划摘要追加一个题型分组，并以组内顺序列出技能、难度和来源。
+     */
+    private void appendQuestionPlanGroup(StringBuilder content, String title, String type,
+                                         List<PlannedQuestion> questions) {
+        List<PlannedQuestion> group = questions.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(question -> type.equals(question.getType()))
+                .toList();
+        if (group.isEmpty()) {
+            return;
+        }
+        content.append("\n\n### ").append(title).append("（").append(group.size()).append("）\n");
+        for (int index = 0; index < group.size(); index++) {
+            PlannedQuestion question = group.get(index);
+            String skills = question.getSkills() == null || question.getSkills().isEmpty()
+                    ? "综合能力" : String.join("、", question.getSkills());
+            String source = question.getSource() == null || question.getSource().isBlank()
+                    || "llm".equalsIgnoreCase(question.getSource()) ? "LLM" : "题库";
+            content.append(index + 1).append(". **").append(skills).append("**")
+                    .append("（").append(difficultyLabel(question.getDifficulty()))
+                    .append(" / ").append(source).append("）\n");
+        }
+    }
+
+    /**
+     * 把内部题型代码转换为用户可读文本。
+     */
+    private String questionTypeLabel(String type) {
+        return switch (type == null ? "" : type) {
+            case "basic" -> "基础";
+            case "experience" -> "经历";
+            case "design" -> "设计";
+            default -> "其他";
+        };
+    }
+
+    /**
+     * 把内部难度代码转换为用户可读文本。
+     */
+    private String difficultyLabel(String difficulty) {
+        return switch (difficulty == null ? "" : difficulty) {
+            case "easy" -> "简单";
+            case "medium" -> "中等";
+            case "hard" -> "困难";
+            default -> "难度未定";
+        };
     }
 
     /**

@@ -207,8 +207,10 @@ public class Orchestrator {
             }
             if (!wpLines.isEmpty()) {
                 weakPointsContext = String.join("\n", wpLines);
-                c.cb.onStageChange("memory_loaded",
-                        String.format("已加载 %d 个与当前 JD 相关的历史薄弱点，将针对性出题", wpLines.size()));
+                String weakPointSummary = String.format("已加载 %d 个与当前 JD 相关的历史薄弱点，将针对性出题",
+                        wpLines.size());
+                c.cb.onStageChange("memory_loaded", weakPointSummary);
+                c.cb.onRelevantWeakPoints(weakPointSummary, wpLines);
             }
         }
 
@@ -312,10 +314,11 @@ public class Orchestrator {
         // 未匹配的方向交给 LLM 出题
         List<PlannedQuestion> llmQuestions = new ArrayList<>();
         if (!unmatchedDirs.isEmpty()) {
-            c.cb.onStageChange("question_assemble",
-                    String.format("正在为 %d 个方向生成面试题目...", unmatchedDirs.size()));
+            String directionSummary = String.format("正在为 %d 个方向生成面试题目...", unmatchedDirs.size());
+            c.cb.onStageChange("question_assemble", directionSummary);
             QuestionDirectionPlan unmatchedPlan = new QuestionDirectionPlan();
             unmatchedPlan.setDirections(unmatchedDirs);
+            c.cb.onQuestionDirections(directionSummary, unmatchedPlan);
             List<String> emptyDocs = Collections.nCopies(unmatchedDirs.size(), "");
             QuestionPlan assembled = questionPlanner.assembleQuestions(c.jdAnalysis, c.matchResult, unmatchedPlan, emptyDocs);
             if (assembled != null && assembled.getQuestions() != null) {
@@ -348,9 +351,10 @@ public class Orchestrator {
         c.session.setQuestionPlan(plan);
         c.session.setStatus(Session.STATUS_PLANNED);
 
-        c.cb.onStageChange("question_plan_done",
-                String.format("出题计划完成，共 %d 道题（基础%d/经历%d/设计%d）",
-                        plan.getTotalQuestions(), basicCount, expCount, designCount));
+        String planSummary = String.format("出题计划完成，共 %d 道题（基础%d/经历%d/设计%d）",
+                plan.getTotalQuestions(), basicCount, expCount, designCount);
+        c.cb.onStageChange("question_plan_done", planSummary);
+        c.cb.onQuestionPlan(planSummary, plan);
     }
 
     /**
