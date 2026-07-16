@@ -52,7 +52,12 @@ public class SessionController {
     }
 
     /**
-     * 获取指定会话详情
+     * 获取指定会话详情。若会话仍有 Redis 实时消息，则与 MySQL 已持久化消息合并后返回，
+     * 保证页面内切换会话和刷新页面使用同一份完整数据。
+     *
+     * @param id       会话 ID
+     * @param username 当前登录用户名
+     * @return 当前用户可访问的完整会话详情
      */
     @GetMapping("/{id}")
     public ResponseEntity<?> getSession(@PathVariable String id, @RequestAttribute("username") String username) {
@@ -67,6 +72,10 @@ public class SessionController {
                 return ResponseEntity.status(403).body(Map.of("error", "无权访问该会话"));
             }
 
+            List<ConversationMessage> cachedMessages = sessionCacheService.getMessages(username, id);
+            if (!cachedMessages.isEmpty()) {
+                session.setChatMessages(mergeMessages(session.getChatMessages(), cachedMessages));
+            }
             return ResponseEntity.ok(session);
         } catch (Exception e) {
             log.error("[Session] 获取会话详情失败: {}", e.getMessage(), e);
@@ -226,11 +235,7 @@ public class SessionController {
      */
     private Map<String, Object> buildCachedSessionResponse(String username, Session session, boolean mysqlSessionExists) {
         List<ConversationMessage> cachedMessages = sessionCacheService.getMessages(username, session.getId());
-        List<ConversationMessage> allMessages = new java.util.ArrayList<>();
-        if (session.getChatMessages() != null) {
-            session.getChatMessages().stream().filter(java.util.Objects::nonNull).forEach(allMessages::add);
-        }
-        cachedMessages.stream().filter(java.util.Objects::nonNull).forEach(allMessages::add);
+        List<ConversationMessage> allMessages = mergeMessages(session.getChatMessages(), cachedMessages);
         return Map.of(
                 "session", toSummary(session),
                 "cached_messages", allMessages,
@@ -239,6 +244,27 @@ public class SessionController {
                 "mysql_session_exists", mysqlSessionExists,
                 "persisted_to_mysql", false
         );
+    }
+
+    /**
+     * 按持久化消息、实时缓存消息的顺序合并会话内容，不修改输入列表并过滤空元素和完整重复项。
+     * ConversationMessage 的相等判断包含角色、类型、内容、元数据和创建时间，因此不同时间发送的
+     * 相同文本仍会保留，只有 MySQL 与 Redis 中完全相同的消息会被合并。
+     *
+     * @param persistedMessages MySQL 中已经持久化的消息
+     * @param cachedMessages    Redis 中尚未批量落库的实时消息
+     * @return 可直接返回前端的完整消息列表
+     */
+    static List<ConversationMessage> mergeMessages(List<ConversationMessage> persistedMessages,
+                                                    List<ConversationMessage> cachedMessages) {
+        java.util.LinkedHashSet<ConversationMessage> merged = new java.util.LinkedHashSet<>();
+        if (persistedMessages != null) {
+            persistedMessages.stream().filter(java.util.Objects::nonNull).forEach(merged::add);
+        }
+        if (cachedMessages != null) {
+            cachedMessages.stream().filter(java.util.Objects::nonNull).forEach(merged::add);
+        }
+        return new java.util.ArrayList<>(merged);
     }
 
     private Session buildCachedOnlySession(String username, String sessionId) {

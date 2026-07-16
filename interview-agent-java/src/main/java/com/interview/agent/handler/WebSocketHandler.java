@@ -856,7 +856,8 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 按时间阶段顺序合并面试前聊天消息和面试过程消息，不修改任一输入列表。
+     * 按时间阶段顺序合并面试前聊天消息和面试过程消息，不修改任一输入列表，并去除
+     * MySQL 与 Redis 中结构和创建时间完全相同的消息。
      *
      * @param first  面试前已经持久化的聊天消息
      * @param second 面试期间暂存在 Redis 的消息
@@ -864,11 +865,11 @@ public class WebSocketHandler extends TextWebSocketHandler {
      */
     static List<ConversationMessage> mergeMessages(List<ConversationMessage> first,
                                                    List<ConversationMessage> second) {
-        List<ConversationMessage> merged = copyMessages(first);
+        java.util.LinkedHashSet<ConversationMessage> merged = new java.util.LinkedHashSet<>(copyMessages(first));
         if (second != null) {
             second.stream().filter(java.util.Objects::nonNull).forEach(merged::add);
         }
-        return merged;
+        return new ArrayList<>(merged);
     }
 
     /**

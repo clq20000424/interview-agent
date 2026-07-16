@@ -16,9 +16,19 @@ import java.util.Map;
 @AllArgsConstructor
 public class ConversationMessage {
 
+    /**
+     * 消息角色，例如：human、assistant、system、user 等。
+     */
     private String role;
+
+    /**
+     * 消息内容。
+     */
     private String content;
 
+    /**
+     * 消息类型，例如：text、image 等。
+     */
     @JsonProperty("message_type")
     private String messageType;
 
@@ -29,6 +39,9 @@ public class ConversationMessage {
     @Builder.Default
     private Map<String, Object> metadata = new HashMap<>();
 
+    /**
+     * 消息创建时间。
+     */
     @JsonProperty("created_at")
     private LocalDateTime createdAt;
 }

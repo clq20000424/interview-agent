@@ -1,7 +1,8 @@
-import {useCallback, useEffect} from 'react'
+import {useCallback, useEffect, useState} from 'react'
 import {Sidebar} from './components/Sidebar'
 import {ChatWindow} from './components/ChatWindow'
 import {LoginPage} from './components/LoginPage'
+import {NoticeDialog} from './components/NoticeDialog'
 import {useWebSocket} from './hooks/useWebSocket'
 import {useAuthStore} from './store/authStore'
 import {useChatStore} from './store/chatStore'
@@ -24,9 +25,19 @@ const KNOWN_MESSAGE_TYPES: ReadonlySet<ChatMessageType> = new Set([
     'rag_evaluation',
 ])
 
+interface NoticeState {
+    title: string
+    message: string
+    actionLabel: string
+}
+
+/**
+ * 组织登录后的会话恢复、历史会话切换及全局提示交互。
+ */
 export default function App() {
     const token = useAuthStore((s) => s.token)
     const wsRef = useWebSocket()
+    const [notice, setNotice] = useState<NoticeState | null>(null)
 
     /**
      * 页面加载后检查是否存在未完成的面试缓存。
@@ -50,7 +61,11 @@ export default function App() {
                     useChatStore.getState().setInterviewing(true)
                     wsRef.current?.send({type: 'load_session', sessionId: result.session.id})
 
-                    alert('检测到您有未完成的面试，已自动恢复。您可以继续答题或选择其他操作。')
+                    setNotice({
+                        title: '已恢复进行中的面试',
+                        message: '上次面试的实时记录已经恢复，可以从当前题目继续作答。',
+                        actionLabel: '继续面试',
+                    })
                 }
             } catch (err) {
                 console.error('[App] 检查活跃会话失败', err)
@@ -95,6 +110,7 @@ export default function App() {
                     ))
                 })
                 useChatStore.getState().replaceMessages(messages)
+                useChatStore.getState().setInterviewing(session.status === 'interviewing')
                 return
             }
 
@@ -154,9 +170,14 @@ export default function App() {
             }
 
             useChatStore.getState().replaceMessages(messages)
+            useChatStore.getState().setInterviewing(session.status === 'interviewing')
         } catch (err) {
             console.error('[App] 加载会话失败', err)
-            alert(err instanceof Error ? err.message : '加载会话失败')
+            setNotice({
+                title: '会话加载失败',
+                message: err instanceof Error ? err.message : '加载会话失败，请稍后重试。',
+                actionLabel: '知道了',
+            })
         }
     }, [wsRef])
 
@@ -175,6 +196,13 @@ export default function App() {
                 }}
             />
             <ChatWindow wsRef={wsRef}/>
+            <NoticeDialog
+                open={notice !== null}
+                title={notice?.title || ''}
+                message={notice?.message || ''}
+                actionLabel={notice?.actionLabel || '确定'}
+                onClose={() => setNotice(null)}
+            />
         </div>
     )
 }
