@@ -99,8 +99,7 @@ export function MessageBubble({ msg }: { msg: ChatMessage }) {
     )
   }
 
-  // 处理简历匹配结果消息
-  if (msg.role === 'system' && msg.messageType === 'text' && msg.content.includes('简历匹配分析完成')) {
+  if (msg.messageType === 'resume_match_result') {
     return (
       <div className="my-3 mx-4 p-4 bg-green-50 border border-green-200 rounded-xl">
         <div className="flex items-center gap-2 mb-2">

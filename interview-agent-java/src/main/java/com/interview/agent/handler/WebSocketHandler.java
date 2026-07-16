@@ -368,7 +368,8 @@ public class WebSocketHandler extends TextWebSocketHandler {
                         sendServerMsg(ws.conn, ServerMsg.builder()
                                 .type("stage_change").stage(stage).message(message).build());
                         // 实时保存阶段变化消息到 Redis，防止刷新丢失
-                        saveMessageToRedis(ws.userID, sessionId, "system", message, Map.of("stage", stage));
+                        saveMessageToRedis(ws.userID, sessionId, "system", message,
+                                Map.of("message_type", "stage", "stage", stage));
                     }
 
                     /**
@@ -1065,6 +1066,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
                     .role(role)
                     .content(content)
                     .messageType(metadata.getOrDefault("message_type", "text").toString())
+                    .metadata(new java.util.HashMap<>(metadata))
                     .createdAt(LocalDateTime.now())
                     .build();
             sessionCacheService.saveMessage(userId, sessionId, msg);

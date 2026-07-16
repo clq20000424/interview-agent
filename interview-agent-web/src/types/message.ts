@@ -52,7 +52,7 @@ export interface ChatMessage {
     id: string
     role: 'user' | 'assistant' | 'system'
     content: string
-    messageType: 'text' | 'score' | 'report' | 'review_plan' | 'stage' | 'question' | 'file' | 'upload_result' | 'rag_evaluation'
+    messageType: 'text' | 'score' | 'report' | 'review_plan' | 'stage' | 'question' | 'resume_match_result' | 'file' | 'upload_result' | 'rag_evaluation'
     timestamp: number
     score?: number
     feedback?: string

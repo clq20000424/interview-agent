@@ -5,7 +5,7 @@ import {LoginPage} from './components/LoginPage'
 import {useWebSocket} from './hooks/useWebSocket'
 import {useAuthStore} from './store/authStore'
 import {useChatStore} from './store/chatStore'
-import {type EvaluationReport, getActiveSession, getSessionDetail, type ReviewPlan} from './api/session'
+import {type ConversationMessage, type EvaluationReport, getActiveSession, getSessionDetail, type ReviewPlan} from './api/session'
 import type {ChatMessage} from './types/message'
 
 type ChatMessageType = ChatMessage['messageType']
@@ -17,6 +17,7 @@ const KNOWN_MESSAGE_TYPES: ReadonlySet<ChatMessageType> = new Set([
     'review_plan',
     'stage',
     'question',
+    'resume_match_result',
     'file',
     'upload_result',
     'rag_evaluation',
@@ -41,13 +42,8 @@ export default function App() {
 
                     useChatStore.getState().setCurrentSessionId(result.session.id)
                     const now = Date.now()
-                    const messages: ChatMessage[] = result.cached_messages.map((msg, idx) => ({
-                        id: `cached-${idx}`,
-                        role: msg.role,
-                        content: msg.content || '',
-                        messageType: toChatMessageType(msg.message_type),
-                        timestamp: msg.created_at ? new Date(msg.created_at).getTime() : now + idx * 100,
-                    }))
+                    const messages = result.cached_messages.map((msg, idx) =>
+                        toStoredChatMessage(msg, `cached-${idx}`, now + idx * 100))
 
                     useChatStore.getState().replaceMessages(messages)
                     useChatStore.getState().setInterviewing(true)
@@ -91,13 +87,11 @@ export default function App() {
 
             if (session.chat_messages?.length) {
                 session.chat_messages.forEach((msg, idx) => {
-                    messages.push({
-                        id: `session-${sessionId}-chat-${idx}`,
-                        role: msg.role,
-                        content: msg.content,
-                        messageType: toChatMessageType(msg.message_type),
-                        timestamp: msg.created_at ? new Date(msg.created_at).getTime() : now + idx * 500,
-                    })
+                    messages.push(toStoredChatMessage(
+                        msg,
+                        `session-${sessionId}-chat-${idx}`,
+                        now + idx * 500,
+                    ))
                 })
                 useChatStore.getState().replaceMessages(messages)
                 return
@@ -184,11 +178,78 @@ export default function App() {
     )
 }
 
-function toChatMessageType(value?: string): ChatMessageType {
+/**
+ * 把 Redis/MySQL 中的结构化会话消息还原为前端展示模型，确保刷新前后的组件类型、
+ * 题号、阶段和评分详情保持一致。
+ */
+function toStoredChatMessage(msg: ConversationMessage, id: string, fallbackTimestamp: number): ChatMessage {
+    const metadata = msg.metadata ?? {}
+    const messageType = toChatMessageType(msg.message_type, msg.role, msg.content)
+    return {
+        id,
+        role: msg.role,
+        content: msg.content || '',
+        messageType,
+        timestamp: msg.created_at ? new Date(msg.created_at).getTime() : fallbackTimestamp,
+        stage: readString(metadata.stage),
+        questionNum: readNumber(metadata.question_num),
+        score: readNumber(metadata.score),
+        feedback: messageType === 'score' ? readString(metadata.feedback) ?? msg.content : undefined,
+        keyPointsHit: readStringArray(metadata.key_points_hit),
+        keyPointsMissed: readStringArray(metadata.key_points_missed),
+    }
+}
+
+/**
+ * 解析持久化消息类型。对修复前已按 text 保存的系统消息进行内容兼容，避免旧历史记录
+ * 继续显示为普通左侧气泡。
+ */
+function toChatMessageType(value?: string, role?: ChatMessage['role'], content = ''): ChatMessageType {
+    if (role === 'system' && (!value || value === 'text')) {
+        if (content.includes('简历匹配分析完成')) {
+            return 'resume_match_result'
+        }
+        if (isLegacyStageMessage(content)) {
+            return 'stage'
+        }
+    }
     if (value && KNOWN_MESSAGE_TYPES.has(value as ChatMessageType)) {
         return value as ChatMessageType
     }
     return 'text'
+}
+
+/** 判断旧数据中的系统文本是否属于面试阶段进度消息。 */
+function isLegacyStageMessage(content: string) {
+    return [
+        '正在',
+        'JD 分析完成',
+        '简历匹配完成',
+        '已加载',
+        '题库检索完成',
+        '出题计划完成',
+        '面试正式开始',
+        '低分题目巩固完成',
+        '用户主动终止面试',
+        '面试提前终止',
+        '面试未作答',
+        '面试流程全部完成',
+    ].some((prefix) => content.startsWith(prefix))
+}
+
+/** 从未知元数据值中安全读取字符串。 */
+function readString(value: unknown) {
+    return typeof value === 'string' ? value : undefined
+}
+
+/** 从未知元数据值中安全读取有限数字。 */
+function readNumber(value: unknown) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+/** 从未知元数据值中安全读取字符串数组。 */
+function readStringArray(value: unknown) {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : undefined
 }
 
 function getSessionTitle(session: { title?: string; jd_analysis?: { position?: string } }) {
