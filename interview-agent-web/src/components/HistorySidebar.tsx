@@ -5,6 +5,7 @@
 
 import {useCallback, useEffect, useState} from 'react'
 import {deleteSession, getSessions, renameSession, type SessionSummary, setSessionPinned,} from '../api/session'
+import {ActionDialog} from './ActionDialog'
 
 interface HistorySidebarProps {
     onLoadSession?: (sessionId: string) => void
@@ -16,6 +17,10 @@ export function HistorySidebar({onLoadSession}: HistorySidebarProps) {
     const [error, setError] = useState<string | null>(null)
     const [openMenuId, setOpenMenuId] = useState<string | null>(null)
     const [processingId, setProcessingId] = useState<string | null>(null)
+    const [notice, setNotice] = useState<{title: string; message: string} | null>(null)
+    const [renameTarget, setRenameTarget] = useState<SessionSummary | null>(null)
+    const [renameValue, setRenameValue] = useState('')
+    const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null)
 
     // 加载会话列表
     const loadSessions = useCallback(async (showLoading = true) => {
@@ -75,28 +80,28 @@ export function HistorySidebar({onLoadSession}: HistorySidebarProps) {
         return () => window.removeEventListener('click', closeMenu)
     }, [])
 
-    // 修改会话名称
-    const handleRename = async (e: React.MouseEvent, session: SessionSummary) => {
+    /** 打开会话重命名对话框并填入当前名称。 */
+    const handleRename = (e: React.MouseEvent, session: SessionSummary) => {
         e.stopPropagation()
         setOpenMenuId(null)
 
-        const currentTitle = getSessionTitle(session)
-        const nextTitle = prompt('编辑名称', currentTitle)
-        if (nextTitle === null) return
+        setRenameTarget(session)
+        setRenameValue(getSessionTitle(session))
+    }
 
-        const title = nextTitle.trim()
-        if (!title) {
-            alert('会话名称不能为空')
-            return
-        }
+    /** 提交新的会话名称，并将接口错误显示为应用内通知。 */
+    const confirmRename = async () => {
+        if (!renameTarget || !renameValue.trim()) return
 
-        setProcessingId(session.id)
+        setProcessingId(renameTarget.id)
         try {
-            await renameSession(session.id, title)
+            await renameSession(renameTarget.id, renameValue.trim())
             await loadSessions()
+            setRenameTarget(null)
         } catch (err) {
             console.error('[HistorySidebar] 修改会话名称失败:', err)
-            alert(err instanceof Error ? err.message : '修改失败')
+            setRenameTarget(null)
+            setNotice({title: '修改失败', message: err instanceof Error ? err.message : '修改失败'})
         } finally {
             setProcessingId(null)
         }
@@ -113,25 +118,32 @@ export function HistorySidebar({onLoadSession}: HistorySidebarProps) {
             await loadSessions()
         } catch (err) {
             console.error('[HistorySidebar] 修改置顶状态失败:', err)
-            alert(err instanceof Error ? err.message : '操作失败')
+            setNotice({title: '操作失败', message: err instanceof Error ? err.message : '操作失败'})
         } finally {
             setProcessingId(null)
         }
     }
 
-    // 删除会话
-    const handleDelete = async (e: React.MouseEvent, sessionId: string) => {
+    /** 打开删除确认对话框，避免误删历史会话。 */
+    const handleDelete = (e: React.MouseEvent, session: SessionSummary) => {
         e.stopPropagation()
         setOpenMenuId(null)
-        if (!confirm('确定要删除这个会话吗？')) return
+        setDeleteTarget(session)
+    }
 
-        setProcessingId(sessionId)
+    /** 确认删除会话，并将进行中面试等业务错误显示为应用内通知。 */
+    const confirmDelete = async () => {
+        if (!deleteTarget) return
+
+        setProcessingId(deleteTarget.id)
         try {
-            await deleteSession(sessionId)
+            await deleteSession(deleteTarget.id)
             await loadSessions()
+            setDeleteTarget(null)
         } catch (err) {
             console.error('[HistorySidebar] 删除会话失败:', err)
-            alert(err instanceof Error ? err.message : '删除失败')
+            setDeleteTarget(null)
+            setNotice({title: '暂时无法删除', message: err instanceof Error ? err.message : '删除失败'})
         } finally {
             setProcessingId(null)
         }
@@ -288,7 +300,7 @@ export function HistorySidebar({onLoadSession}: HistorySidebarProps) {
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={(e) => handleDelete(e, session.id)}
+                                        onClick={(e) => handleDelete(e, session)}
                                         disabled={processingId === session.id}
                                         className="block w-full px-3 py-2 text-left text-xs text-red-300 hover:bg-red-950 disabled:text-gray-500"
                                     >
@@ -300,6 +312,39 @@ export function HistorySidebar({onLoadSession}: HistorySidebarProps) {
                     )
                 })}
             </div>
+            <ActionDialog
+                open={renameTarget !== null}
+                title="编辑会话名称"
+                message="名称会同步显示在历史会话列表中。"
+                inputLabel="会话名称"
+                inputValue={renameValue}
+                onInputChange={setRenameValue}
+                confirmLabel="保存"
+                cancelLabel="取消"
+                busy={renameTarget !== null && processingId === renameTarget.id}
+                confirmDisabled={!renameValue.trim()}
+                onConfirm={() => void confirmRename()}
+                onClose={() => setRenameTarget(null)}
+            />
+            <ActionDialog
+                open={deleteTarget !== null}
+                title="删除会话"
+                message={`确定删除“${deleteTarget ? getSessionTitle(deleteTarget) : ''}”吗？删除后无法恢复。`}
+                confirmLabel="删除"
+                cancelLabel="取消"
+                destructive
+                busy={deleteTarget !== null && processingId === deleteTarget.id}
+                onConfirm={() => void confirmDelete()}
+                onClose={() => setDeleteTarget(null)}
+            />
+            <ActionDialog
+                open={notice !== null}
+                title={notice?.title || ''}
+                message={notice?.message || ''}
+                confirmLabel="知道了"
+                onConfirm={() => setNotice(null)}
+                onClose={() => setNotice(null)}
+            />
         </div>
     )
 }

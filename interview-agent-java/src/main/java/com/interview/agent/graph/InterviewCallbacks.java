@@ -25,6 +25,21 @@ public interface InterviewCallbacks {
     void onReviewItem(String content);
 
     /**
+     * 出题方向规划结果回调，用于展示正在生成题目的方向明细。
+     */
+    void onQuestionDirections(String summary, com.interview.agent.model.QuestionDirectionPlan plan);
+
+    /**
+     * 最终出题计划回调，用于展示题型分布、技能、难度和来源，不暴露完整题干。
+     */
+    void onQuestionPlan(String summary, com.interview.agent.model.QuestionPlan plan);
+
+    /**
+     * 与当前岗位相关的历史薄弱点回调，用于展开查看针对性出题依据。
+     */
+    void onRelevantWeakPoints(String summary, java.util.List<String> details);
+
+    /**
      * 评分回调
      */
     void onScore(AnswerScore score);

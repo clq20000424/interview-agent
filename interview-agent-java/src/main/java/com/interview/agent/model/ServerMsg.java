@@ -21,7 +21,7 @@ import java.util.List;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ServerMsg {
-    // chat_reply/stage_change/question/review_item/score/report/review_plan/error/upload_result/interview_complete
+    // chat_reply/stage_change/question/review_item/memory_weak_points/question_directions/question_plan_details/score
     private String type;
     private String content;
     private String stage;

@@ -116,6 +116,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 })
                 break
 
+            case 'question_directions':
+                get().addMessage({
+                    id: nextId(), role: 'system', content: msg.content,
+                    messageType: 'question_directions', summary: msg.message, timestamp: now,
+                })
+                break
+
+            case 'memory_weak_points':
+                get().addMessage({
+                    id: nextId(), role: 'system', content: msg.content,
+                    messageType: 'memory_weak_points', summary: msg.message, timestamp: now,
+                })
+                break
+
+            case 'question_plan_details':
+                get().addMessage({
+                    id: nextId(), role: 'system', content: msg.content,
+                    messageType: 'question_plan_details', summary: msg.message, timestamp: now,
+                })
+                break
+
             case 'score':
                 get().addMessage({
                     id: nextId(), role: 'system', content: msg.feedback,
@@ -181,9 +202,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     id: nextId(), role: 'system', content: msg.message,
                     messageType: 'text', timestamp: now,
                 })
-                if (get().isInterviewing) {
-                    set({isInterviewing: false, currentStage: ''})
-                }
                 break
         }
     },
