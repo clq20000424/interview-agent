@@ -28,7 +28,8 @@ interface ChatState {
     currentStage: string
     /** 
      * 当前会话的唯一标识
-     * - 面试开始时由后端通过 session_started 消息设置
+     * - 普通聊天首次持久化或面试开始时由后端通过 session_started 消息设置
+     * - 加载历史会话时由 App.tsx 设置
      * - 页面刷新恢复时由 App.tsx 从 getActiveSession 接口获取
      * - 用于将前端消息与后端 Redis 缓存/数据库记录关联
      */
@@ -78,6 +79,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     clearMessages: () => set({messages: [], currentSessionId: null}),
 
+    /**
+     * 将服务端消息分发到对应 UI 状态；收到 session_started 时同步当前 Session ID，
+     * 保证普通聊天升级为面试以及后续回答都关联同一条会话记录。
+     */
     handleServerMessage: (msg) => {
         const now = Date.now()
         switch (msg.type) {
@@ -131,9 +136,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 break
 
             case 'session_started':
-                // 后端通知面试会话已开始，保存 sessionId 以便后续消息关联
+                // 后端通知当前会话 ID，普通聊天升级为面试时继续复用。
                 set({currentSessionId: msg.content})
-                console.log('[ChatStore] 会话已开始:', msg.content)
+                console.log('[ChatStore] 当前会话:', msg.content)
                 break
 
             case 'sessions_changed':

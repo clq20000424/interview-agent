@@ -7,7 +7,7 @@ export type ClientMessage =
     | { type: 'chat'; content: string }
     | { type: 'new_chat' }
     | { type: 'load_session'; sessionId: string }
-    | { type: 'start_interview'; jd: string; resume: string }
+    | { type: 'start_interview'; jd: string; resume: string; sessionId?: string }
     | { type: 'answer'; content: string; sessionId?: string }
     | { type: 'quit_interview'; sessionId?: string }
     | { type: 'upload_file'; filename: string; data: string }

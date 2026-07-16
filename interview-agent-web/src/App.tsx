@@ -68,10 +68,14 @@ export default function App() {
         checkActiveSession()
     }, [token, wsRef])
 
-    // 加载历史会话。
+    /**
+     * 加载指定历史会话，并同步更新当前 Session ID。这样从历史普通聊天继续发起面试时，
+     * start_interview 能携带正确 ID，让后端升级原会话而不是新建重复记录。
+     */
     const handleLoadSession = useCallback(async (sessionId: string) => {
         try {
             const session = await getSessionDetail(sessionId)
+            useChatStore.getState().setCurrentSessionId(sessionId)
             wsRef.current?.send({type: 'load_session', sessionId})
 
             const now = Date.now()

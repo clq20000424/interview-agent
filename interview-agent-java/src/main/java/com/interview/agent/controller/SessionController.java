@@ -178,7 +178,7 @@ public class SessionController {
             // 查找状态为 interviewing 的会话（即正在进行中的面试）
             List<Session> sessions = sessionRepository.findByUserIdAndStatus(username, "interviewing");
             if (!sessions.isEmpty()) {
-                Session activeSession = sessions.get(0);
+                Session activeSession = sessions.getFirst();
                 // 检查 Redis 中是否有该会话的缓存消息
                 boolean hasCachedMessages = sessionCacheService.hasCachedMessages(username, activeSession.getId());
                 if (hasCachedMessages) {
@@ -190,7 +190,7 @@ public class SessionController {
             // 兜底：如果进行中会话索引还没写入 MySQL，但 Redis 已经有缓存，也允许从 Redis 恢复页面。
             List<String> cachedSessionIds = sessionCacheService.getCachedSessionIds(username);
             if (!cachedSessionIds.isEmpty()) {
-                String sessionId = cachedSessionIds.get(0);
+                String sessionId = cachedSessionIds.getFirst();
                 Session cachedSession = sessionRepository.findById(sessionId)
                         .filter(session -> username.equals(session.getUserId()))
                         .orElseGet(() -> buildCachedOnlySession(username, sessionId));
@@ -204,13 +204,27 @@ public class SessionController {
         }
     }
 
+    /**
+     * 构造进行中面试的恢复响应。普通聊天升级为面试后，面试前消息已经保存在 MySQL，
+     * 面试过程消息暂存在 Redis，因此恢复页面时需要按阶段顺序合并两部分消息。
+     *
+     * @param username           当前登录用户名，用于隔离 Redis 会话数据
+     * @param session            MySQL 中的进行中 Session，或根据缓存构造的临时 Session
+     * @param mysqlSessionExists 是否已找到真实的 MySQL Session 索引
+     * @return 包含会话摘要、完整恢复消息和缓存状态的响应 Map
+     */
     private Map<String, Object> buildCachedSessionResponse(String username, Session session, boolean mysqlSessionExists) {
         List<ConversationMessage> cachedMessages = sessionCacheService.getMessages(username, session.getId());
+        List<ConversationMessage> allMessages = new java.util.ArrayList<>();
+        if (session.getChatMessages() != null) {
+            session.getChatMessages().stream().filter(java.util.Objects::nonNull).forEach(allMessages::add);
+        }
+        cachedMessages.stream().filter(java.util.Objects::nonNull).forEach(allMessages::add);
         return Map.of(
                 "session", toSummary(session),
-                "cached_messages", cachedMessages,
+                "cached_messages", allMessages,
                 "has_cached", true,
-                "cache_message_count", cachedMessages.size(),
+                "cache_message_count", allMessages.size(),
                 "mysql_session_exists", mysqlSessionExists,
                 "persisted_to_mysql", false
         );

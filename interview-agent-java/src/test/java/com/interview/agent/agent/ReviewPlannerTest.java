@@ -80,6 +80,7 @@ class ReviewPlannerTest {
         assertEquals("MySQL 官方文档", plan.getResources().get(0).getTitle());
     }
 
+    /** 验证模型服务不可用时可根据报告薄弱项生成可执行的本地计划。 */
     @Test
     @DisplayName("模型不可用时应根据薄弱项生成本地基础计划")
     void buildFallbackPlan_withWeaknesses_createsActionablePlan() {
@@ -102,6 +103,7 @@ class ReviewPlannerTest {
         assertNotNull(plan.getCreatedAt());
     }
 
+    /** 验证报告未给出薄弱项时选择得分最低的三个维度作为复习重点。 */
     @Test
     @DisplayName("报告没有薄弱项时应选取得分最低的三个维度")
     void buildFallbackPlan_withoutWeaknesses_usesLowestDimensions() {
@@ -125,6 +127,7 @@ class ReviewPlannerTest {
         assertEquals("沟通表达", plan.getStudyPlan().get(2).getTopic());
     }
 
+    /** 验证所有模型路径失败时对编排层返回明确的 fallback 标记。 */
     @Test
     @DisplayName("所有模型调用失败时应返回可识别的降级结果")
     void plan_whenAllModelCallsFail_marksResultAsFallback() {
