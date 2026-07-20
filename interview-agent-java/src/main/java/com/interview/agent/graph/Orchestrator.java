@@ -17,11 +17,14 @@ import com.interview.agent.rag.BM25Manager;
 import com.interview.agent.rag.MilvusStore;
 import com.interview.agent.rag.RagDocument;
 import com.interview.agent.rag.Reranker;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
@@ -51,6 +54,11 @@ import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
 @Component
 public class Orchestrator {
 
+    /**
+     * 两路 RAG 召回的最大等待时间，超时后该路按空结果降级。
+     */
+    private static final long RAG_RETRIEVAL_TIMEOUT_SECONDS = 5L;
+
     private final JDAnalyzer jdAnalyzer;
     private final ResumeMatcher resumeMatcher;
     private final QuestionPlanner questionPlanner;
@@ -64,6 +72,20 @@ public class Orchestrator {
     private final Reranker reranker;
     private final MySQLStore mysqlStore;
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+
+    /**
+     * RAG 专用有界线程池，避免检索任务占用公共 ForkJoinPool 或无限制创建线程。
+     * 队列满时由提交线程执行任务，提供背压并保证请求不会静默丢失。
+     */
+    private final ExecutorService ragExecutor = new ThreadPoolExecutor(
+            4, 8, 60L, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(64),
+            runnable -> {
+                Thread thread = new Thread(runnable, "rag-retrieval-worker");
+                thread.setDaemon(true);
+                return thread;
+            },
+            new ThreadPoolExecutor.CallerRunsPolicy());
 
     public Orchestrator(JDAnalyzer jdAnalyzer, ResumeMatcher resumeMatcher,
                         QuestionPlanner questionPlanner, Interviewer interviewer,
@@ -83,6 +105,14 @@ public class Orchestrator {
         this.bm25Manager = bm25Manager;
         this.reranker = reranker;
         this.mysqlStore = mysqlStore;
+    }
+
+    /**
+     * 关闭 RAG 线程池，避免应用停止时遗留非守护任务。
+     */
+    @PreDestroy
+    private void shutdownRagExecutor() {
+        ragExecutor.shutdown();
     }
 
     /**
@@ -245,33 +275,26 @@ public class Orchestrator {
                 List<RagDocument> docs = new ArrayList<>();
                 Set<String> seen = new HashSet<>();
 
-                if (milvusStore != null) {
-                    try {
-                        List<RagDocument> milvusDocs = milvusStore.retrieveByUser(userID, query, 10);
-                        for (RagDocument doc : milvusDocs) {
-                            if (!seen.contains(doc.getId())) {
-                                seen.add(doc.getId());
-                                docs.add(doc);
-                            }
-                        }
-                    } catch (Exception e) {
-                        log.warn("[RAG] Milvus 检索失败（方向{}）: {}", i + 1, e.getMessage());
-                    }
-                }
+                // Milvus 和 BM25 相互独立，使用专用线程池并行召回；单路失败或超时只影响自身结果。
+                long retrievalStart = System.nanoTime();
+                CompletableFuture<List<RagDocument>> milvusFuture = submitRagRetrieval(
+                        "Milvus", i + 1,
+                        () -> milvusStore == null
+                                ? Collections.emptyList()
+                                : milvusStore.retrieveByUser(userID, query, 10));
 
-                if (bm25Manager != null) {
-                    try {
-                        List<RagDocument> bm25Docs = bm25Manager.retrieve(userID, query);
-                        for (RagDocument doc : bm25Docs) {
-                            if (!seen.contains(doc.getId())) {
-                                seen.add(doc.getId());
-                                docs.add(doc);
-                            }
-                        }
-                    } catch (Exception e) {
-                        log.warn("[RAG] BM25 检索失败（方向{}）: {}", i + 1, e.getMessage());
-                    }
-                }
+                CompletableFuture<List<RagDocument>> bm25Future = submitRagRetrieval(
+                        "BM25", i + 1,
+                        () -> bm25Manager == null
+                                ? Collections.emptyList()
+                                : bm25Manager.retrieve(userID, query));
+
+                CompletableFuture.allOf(milvusFuture, bm25Future).join();
+                addUniqueDocuments(docs, seen, milvusFuture.join());
+                addUniqueDocuments(docs, seen, bm25Future.join());
+                log.info("[RAG] 方向 {} 双路召回完成: milvus={}, bm25={}, merged={}, elapsedMs={}",
+                        i + 1, milvusFuture.join().size(), bm25Future.join().size(), docs.size(),
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - retrievalStart));
 
                 if (!docs.isEmpty()) {
                     // Rerank 取 top 1
@@ -716,6 +739,48 @@ public class Orchestrator {
             log.warn("[Orchestrator] 检索参考答案失败: {}", e.getMessage());
         }
         return null;
+    }
+
+    /**
+     * 提交一条带超时和异常降级的 RAG 召回任务。
+     * 超时或后端异常时返回空列表，避免单路检索阻断整次面试出题。
+     */
+    private CompletableFuture<List<RagDocument>> submitRagRetrieval(
+            String backend, int direction, Supplier<List<RagDocument>> retrieval) {
+        long start = System.nanoTime();
+        return CompletableFuture.supplyAsync(() -> {
+                    List<RagDocument> documents = retrieval.get();
+                    return documents == null ? Collections.<RagDocument>emptyList() : documents;
+                }, ragExecutor)
+                .orTimeout(RAG_RETRIEVAL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .exceptionally(error -> {
+                    Throwable cause = error.getCause() != null ? error.getCause() : error;
+                    log.warn("[RAG] {} 检索失败（方向{}，elapsedMs={}）: {}", backend, direction,
+                            TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start), cause.getMessage());
+                    return Collections.emptyList();
+                })
+                .whenComplete((documents, error) -> {
+                    if (error == null) {
+                        log.info("[RAG] {} 检索完成（方向{}）: count={}, elapsedMs={}", backend, direction,
+                                documents.size(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+                    }
+                });
+    }
+
+    /**
+     * 按召回来源顺序合并结果并去重，保持 Milvus 优先、BM25 补充的原有排序语义。
+     */
+    private static void addUniqueDocuments(List<RagDocument> documents,
+                                           Set<String> seen,
+                                           List<RagDocument> candidates) {
+        if (candidates == null) {
+            return;
+        }
+        for (RagDocument candidate : candidates) {
+            if (candidate != null && seen.add(candidate.getId())) {
+                documents.add(candidate);
+            }
+        }
     }
 
     /**
