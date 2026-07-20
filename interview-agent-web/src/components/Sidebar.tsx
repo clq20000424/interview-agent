@@ -8,9 +8,11 @@ import {HistorySidebar} from './HistorySidebar'
 interface SidebarProps {
     onLoadSession?: (sessionId: string) => void
     onNewChat?: () => void
+    /** 删除会话成功后通知主页面处理当前会话切换。 */
+    onSessionDeleted?: (sessionId: string) => void
 }
 
-export function Sidebar({onLoadSession, onNewChat}: SidebarProps) {
+export function Sidebar({onLoadSession, onNewChat, onSessionDeleted}: SidebarProps) {
     const {clearMessages, connected} = useChatStore()
     const username = useAuthStore((s) => s.username)
     const logout = useAuthStore((s) => s.logout)
@@ -32,7 +34,10 @@ export function Sidebar({onLoadSession, onNewChat}: SidebarProps) {
             </div>
 
             <div className="flex-1 overflow-hidden">
-                <HistorySidebar onLoadSession={onLoadSession}/>
+                <HistorySidebar
+                    onLoadSession={onLoadSession}
+                    onSessionDeleted={onSessionDeleted}
+                />
             </div>
 
             <div className="p-3 border-t border-gray-700 space-y-2">

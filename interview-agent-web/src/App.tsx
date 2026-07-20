@@ -197,6 +197,12 @@ export default function App() {
                     wsRef.current?.send({type: 'new_chat'})
                     window.dispatchEvent(new Event('sessions_changed'))
                 }}
+                onSessionDeleted={(sessionId) => {
+                    // 删除当前打开的会话后清空旧消息和 ID，避免继续向已删除会话写入消息。
+                    if (useChatStore.getState().currentSessionId !== sessionId) return
+                    useChatStore.getState().clearMessages()
+                    wsRef.current?.send({type: 'new_chat'})
+                }}
             />
             <ChatWindow wsRef={wsRef}/>
             <NoticeDialog

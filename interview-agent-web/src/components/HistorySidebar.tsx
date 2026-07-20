@@ -9,9 +9,11 @@ import {ActionDialog} from './ActionDialog'
 
 interface HistorySidebarProps {
     onLoadSession?: (sessionId: string) => void
+    /** 删除会话成功后通知外层同步当前聊天状态。 */
+    onSessionDeleted?: (sessionId: string) => void
 }
 
-export function HistorySidebar({onLoadSession}: HistorySidebarProps) {
+export function HistorySidebar({onLoadSession, onSessionDeleted}: HistorySidebarProps) {
     const [sessions, setSessions] = useState<SessionSummary[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -138,6 +140,7 @@ export function HistorySidebar({onLoadSession}: HistorySidebarProps) {
         setProcessingId(deleteTarget.id)
         try {
             await deleteSession(deleteTarget.id)
+            onSessionDeleted?.(deleteTarget.id)
             await loadSessions()
             setDeleteTarget(null)
         } catch (err) {

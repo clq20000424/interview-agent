@@ -149,6 +149,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
                     .createdAt(terminatedAt)
                     .build());
             session.setChatMessages(allMessages);
+            session.setTitle(buildInterviewTitle(session));
             session.setStatus(Session.STATUS_TERMINATED);
             session.setUpdatedAt(terminatedAt);
             sessionRepository.save(session);
