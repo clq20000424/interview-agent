@@ -21,10 +21,14 @@ import java.util.stream.Collectors;
 @Component
 public class LongTermMemory {
 
-    /** 薄弱点超过 30 天自动淘汰 */
+    /**
+     * 薄弱点超过 30 天自动淘汰
+     */
     private static final Duration WEAK_POINT_MAX_AGE = Duration.ofDays(30);
 
-    /** 出题时只取最弱的 Top N */
+    /**
+     * 出题时只取最弱的 Top N
+     */
     private static final int WEAK_POINT_TOP_N = 10;
 
     private final Map<String, UserProfile> profiles = new ConcurrentHashMap<>();
@@ -156,7 +160,7 @@ public class LongTermMemory {
      * 从内存画像和组合存储中移除指定面试历史。薄弱点是跨会话聚合结果，无法按单次会话
      * 准确回滚，因此这里只删除 interviewHist 中可明确归属到 Session 的记录。
      *
-     * @param userID 会话所属用户 ID
+     * @param userID    会话所属用户 ID
      * @param sessionId 待删除的 Session ID
      * @return 是否找到并删除了历史记录
      */

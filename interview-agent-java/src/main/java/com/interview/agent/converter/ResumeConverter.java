@@ -10,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Resume ↔ JSON 字符串转换器
- * 
+ *
  * @author 陈龙强
  */
 @Slf4j

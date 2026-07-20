@@ -34,11 +34,15 @@ import java.time.Duration;
 @AutoConfigureAfter(name = "com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeAutoConfiguration")
 public class RagHttpClientAutoConfig {
 
-    /** 读/空闲超时（秒），可用环境变量 DASHSCOPE_READ_TIMEOUT 覆盖（默认 300）。 */
+    /**
+     * 读/空闲超时（秒），可用环境变量 DASHSCOPE_READ_TIMEOUT 覆盖（默认 300）。
+     */
     private static final long TIMEOUT_SECONDS =
             Long.parseLong(System.getenv().getOrDefault("DASHSCOPE_READ_TIMEOUT", "600"));
 
-    /** 自定义 Jetty HttpClient：idle 300s、connect 30s（由 Spring 管理生命周期，销毁时 stop）。 */
+    /**
+     * 自定义 Jetty HttpClient：idle 300s、connect 30s（由 Spring 管理生命周期，销毁时 stop）。
+     */
     @Bean(destroyMethod = "stop")
     public HttpClient dashScopeJettyHttpClient() throws Exception {
         HttpClient client = new HttpClient();

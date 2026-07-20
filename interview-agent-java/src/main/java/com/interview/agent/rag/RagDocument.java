@@ -17,10 +17,33 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class RagDocument {
+    /**
+     * 文档唯一 ID
+     */
     private String id;
+
+    /**
+     * 文档内容
+     */
     private String content;
+
+    /**
+     * 元数据
+     */
     private Map<String, Object> metadata;
+
+    /**
+     * 用户 ID
+     */
     private String userId;
+
+    /**
+     * 来源文件
+     */
     private String sourceFile;
+
+    /**
+     * 检索得分
+     */
     private float score;
 }

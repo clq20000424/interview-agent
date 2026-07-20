@@ -17,7 +17,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class ShortTermMemory {
 
-    /** 滑动窗口大小：20 条消息 */
+    /**
+     * 滑动窗口大小：20 条消息
+     */
     private static final int DEFAULT_MAX_LEN = 20;
 
     private final int maxLen;

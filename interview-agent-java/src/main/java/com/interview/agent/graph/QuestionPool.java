@@ -2,11 +2,7 @@ package com.interview.agent.graph;
 
 import com.interview.agent.model.PlannedQuestion;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 按难度分桶的题池，支持按当前难度就近取题。
@@ -18,7 +14,9 @@ import java.util.Map;
  */
 class QuestionPool {
 
-    /** 每个目标难度取不到题时的就近回退顺序。 */
+    /**
+     * 每个目标难度取不到题时的就近回退顺序。
+     */
     private static final Map<String, List<String>> FALLBACK_ORDER = Map.of(
             "easy", List.of("easy", "medium", "hard"),
             "medium", List.of("medium", "easy", "hard"),
@@ -47,7 +45,9 @@ class QuestionPool {
         }
     }
 
-    /** 题池是否已取空。 */
+    /**
+     * 题池是否已取空。
+     */
     boolean isEmpty() {
         return remain == 0;
     }

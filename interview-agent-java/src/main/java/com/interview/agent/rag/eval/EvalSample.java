@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * 一条评估样本（评估数据集中的一行）。
- *
+ * <p>
  * 用法：人工标注（或 gen-dataset 自动生成）后写入 data/eval/dataset_v1.json，
  * 由 {@link RetrievalEvaluator} 读取使用。
  *
@@ -24,22 +24,34 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class EvalSample {
 
-    /** 样本唯一 ID，如 "eval_001" */
+    /**
+     * 样本唯一 ID，如 "eval_001"
+     */
     private String id;
 
-    /** 检索查询（模拟 Phase 1 的 SearchQuery） */
+    /**
+     * 检索查询（模拟 Phase 1 的 SearchQuery）
+     */
     private String query;
 
-    /** 人工标注的相关题目 ID 列表（黄金标准） */
+    /**
+     * 人工标注的相关题目 ID 列表（黄金标准）
+     */
     @JsonProperty("relevant_doc_ids")
     private List<String> relevantDocIds;
 
-    /** 技术领域，如 "Go 并发" / "MySQL" */
+    /**
+     * 技术领域，如 "Go 并发" / "MySQL"
+     */
     private String topic;
 
-    /** 难度：easy / medium / hard */
+    /**
+     * 难度：easy / medium / hard
+     */
     private String difficulty;
 
-    /** 标注说明（可选） */
+    /**
+     * 标注说明（可选）
+     */
     private String note;
 }

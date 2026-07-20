@@ -147,7 +147,7 @@ public class SessionController {
      * 删除指定会话及其在 MySQL、Redis、长短期记忆中的关联数据。进行中的面试会继续写入，
      * 为避免删除后被异步任务重新创建，必须先终止面试再删除。
      *
-     * @param id 待删除的 Session ID
+     * @param id       待删除的 Session ID
      * @param username 当前登录用户名
      * @return 删除成功返回 204；越权、会话不存在或仍在运行时返回对应错误
      */
@@ -256,7 +256,7 @@ public class SessionController {
      * @return 可直接返回前端的完整消息列表
      */
     static List<ConversationMessage> mergeMessages(List<ConversationMessage> persistedMessages,
-                                                    List<ConversationMessage> cachedMessages) {
+                                                   List<ConversationMessage> cachedMessages) {
         java.util.LinkedHashSet<ConversationMessage> merged = new java.util.LinkedHashSet<>();
         if (persistedMessages != null) {
             persistedMessages.stream().filter(java.util.Objects::nonNull).forEach(merged::add);

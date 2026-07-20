@@ -1,7 +1,7 @@
 package com.interview.agent.rag.eval;
 
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.io.IOException;
@@ -9,7 +9,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * 评估报告渲染与落盘。
@@ -69,7 +71,8 @@ public final class EvalReportRenderer {
         b.append("## 1. 配置快照\n\n| 字段 | 值 |\n|------|----|\n");
         RagConfigSnapshot c = r.getConfig();
         if (c != null) {
-            if (notBlank(c.getEmbeddingModel())) b.append(String.format("| EmbeddingModel | %s |%n", c.getEmbeddingModel()));
+            if (notBlank(c.getEmbeddingModel()))
+                b.append(String.format("| EmbeddingModel | %s |%n", c.getEmbeddingModel()));
             if (c.getVectorDim() > 0) b.append(String.format("| VectorDim | %d |%n", c.getVectorDim()));
             if (c.getVectorTopK() > 0) b.append(String.format("| VectorTopK | %d |%n", c.getVectorTopK()));
             if (c.getBm25TopK() > 0) b.append(String.format("| BM25TopK | %d |%n", c.getBm25TopK()));

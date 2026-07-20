@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * JPA 属性转换器：将复杂对象转换为 JSON 字符串存储到数据库
- * 
+ *
  * @author 陈龙强
  */
 @Slf4j

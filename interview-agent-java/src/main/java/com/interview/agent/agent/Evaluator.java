@@ -1,18 +1,18 @@
 package com.interview.agent.agent;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.interview.agent.model.EvaluationReport;
 import com.interview.agent.model.InterviewState;
 import com.interview.agent.model.QAPair;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -33,9 +33,9 @@ public class Evaluator {
 
     private static final String EVALUATOR_PROMPT = """
             你是一位经验丰富的面试评估专家。请根据候选人的完整面试表现，生成一份详细的评估报告。
-
+            
             请输出纯 JSON 格式：
-
+            
             {
               "overall_score": 75.0,
               "overall_level": "B",
@@ -60,7 +60,7 @@ public class Evaluator {
               ],
               "summary": "综合评语（2-3句话）"
             }
-
+            
             评级标准：
             - A（90-100）：表现出色，强烈推荐
             - B（70-89）：表现良好，推荐
@@ -68,7 +68,7 @@ public class Evaluator {
             - D（0-49）：表现不佳，不推荐""";
 
     public EvaluationReport evaluate(InterviewState state, String position,
-                                      String candidateName, boolean userTerminated) {
+                                     String candidateName, boolean userTerminated) {
         log.info("[Evaluator] 开始生成评估报告，共 {} 道题", state.getQaHistory().size());
 
         StringBuilder userMsg = new StringBuilder();

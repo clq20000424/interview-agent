@@ -17,7 +17,7 @@ import java.util.List;
 
 /**
  * 基于 LLM 的 RAG 质量评估器。
- *
+ * <p>
  * 提供两类在线评估能力：
  * 1. {@link #evaluate} —— 三维质量评估：忠实度 / 相关性 / 完整性
  * 2. {@link #evaluateQuestionBank} —— 题库诊断：精确率 / 召回率 / 技能覆盖度
@@ -35,25 +35,25 @@ public class RagQualityEvaluator {
 
     private static final String EVAL_PROMPT = """
             你是一个 RAG（检索增强生成）质量评估专家。请评估以下 RAG 系统的输出质量。
-
+            
             ## 用户问题
             %s
-
+            
             ## 检索到的参考文档
             %s
-
+            
             ## 系统生成的回答
             %s
-
+            
             请从以下三个维度评分（0-1 之间的小数），并输出纯 JSON：
-
+            
             {
               "faithfulness": 0.0,
               "relevance": 0.0,
               "completeness": 0.0,
               "reasoning": "评估理由"
             }
-
+            
             评分标准：
             - faithfulness（忠实度）：回答是否完全基于检索到的文档？是否有臆造内容？
             - relevance（相关性）：检索到的文档是否与用户问题相关？
@@ -61,19 +61,19 @@ public class RagQualityEvaluator {
 
     private static final String QUESTION_BANK_EVAL_PROMPT = """
             你是一个 RAG 检索质量评估专家。请评估以下从题库中检索到的题目对目标岗位 JD 的匹配质量。
-
+            
             ## 目标岗位 JD
             %s
-
+            
             ## 从题库中检索到的题目（共 %d 道）
             %s
-
+            
             请严格按以下步骤评估，并输出纯 JSON：
-
+            
             第一步：逐题判断相关性——每道检索到的题目是否与该 JD 的技能要求相关？
             第二步：提取 JD 中的核心技能方向，逐一检查题库是否覆盖
             第三步：计算指标
-
+            
             {
               "precision": 0.0,
               "recall": 0.0,
@@ -86,7 +86,7 @@ public class RagQualityEvaluator {
                 {"index": 1, "relevant": true, "reason": "简要理由"}
               ]
             }
-
+            
             指标计算方式：
             - precision（精确率）= 检索到的题目中相关题数 / 检索到的总题数。衡量检索的准确程度。
             - recall（召回率）= 题库覆盖的 JD 技能方向数 / JD 总技能方向数。衡量题库对 JD 的覆盖程度。
@@ -100,7 +100,9 @@ public class RagQualityEvaluator {
         this.chatModel = chatModel;
     }
 
-    /** 评估 RAG 输出质量（忠实度 / 相关性 / 完整性）。 */
+    /**
+     * 评估 RAG 输出质量（忠实度 / 相关性 / 完整性）。
+     */
     public EvalResult evaluate(String question, List<RagDocument> docs, String answer) {
         StringBuilder docsText = new StringBuilder();
         for (int i = 0; i < docs.size(); i++) {
@@ -124,7 +126,9 @@ public class RagQualityEvaluator {
         }
     }
 
-    /** 评估题库与 JD 的匹配质量（在线题库诊断：精确率 / 召回率 / 技能覆盖度）。 */
+    /**
+     * 评估题库与 JD 的匹配质量（在线题库诊断：精确率 / 召回率 / 技能覆盖度）。
+     */
     public QuestionBankEvalResult evaluateQuestionBank(String jdSkills, List<RagDocument> docs) {
         StringBuilder docsText = new StringBuilder();
         for (int i = 0; i < docs.size(); i++) {
@@ -144,7 +148,9 @@ public class RagQualityEvaluator {
         }
     }
 
-    /** 从 LLM 输出中提取第一个完整的 JSON 对象（容忍 ```json 包裹和多余文字）。 */
+    /**
+     * 从 LLM 输出中提取第一个完整的 JSON 对象（容忍 ```json 包裹和多余文字）。
+     */
     private static String extractJson(String text) {
         if (text == null) {
             return "{}";
@@ -166,66 +172,119 @@ public class RagQualityEvaluator {
         private String reasoning;
     }
 
-    /** RAG 三维质量评估结果。 */
+    /**
+     * RAG 三维质量评估结果。
+     */
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class EvalResult {
-        /** 忠实度（0-1）：回答是否基于检索文档 */
+        /**
+         * 忠实度（0-1）：回答是否基于检索文档
+         */
         private double faithfulness;
-        /** 相关性（0-1）：检索文档是否与问题相关 */
+        /**
+         * 相关性（0-1）：检索文档是否与问题相关
+         */
         private double relevance;
-        /** 完整性（0-1）：回答是否覆盖了所有要点 */
+        /**
+         * 完整性（0-1）：回答是否覆盖了所有要点
+         */
         private double completeness;
-        /** 综合得分 */
+        /**
+         * 综合得分
+         */
         private double overall;
     }
 
-    /** 题库诊断评估结果，字段与前端 RAGEvaluation 对齐。 */
+    /**
+     * 题库诊断评估结果，字段与前端 RAGEvaluation 对齐。
+     */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class QuestionBankEvalResult {
-        /** 精确率：检索到的题中有多少是真正相关的 */
+        /**
+         * 精确率：检索到的题中有多少是真正相关的
+         */
         private double precision;
-        /** 召回率（近似）：JD 技能方向被题库覆盖的比例 */
+        /**
+         * 召回率（近似）：JD 技能方向被题库覆盖的比例
+         */
         private double recall;
-        /** 语义相关性：检索结果与 JD 的语义匹配程度 */
+        /**
+         * 语义相关性：检索结果与 JD 的语义匹配程度
+         */
         private double relevance;
-        /** 技能覆盖度：同 recall，保留兼容 */
+        /**
+         * 技能覆盖度：同 recall，保留兼容
+         */
         private double completeness;
-        /** 综合得分 */
+        /**
+         * 综合得分
+         */
         private double overall;
-        /** 诊断摘要 */
+        /**
+         * 诊断摘要
+         */
         private String summary;
-        /** 各技能方向覆盖详情 */
+        /**
+         * 各技能方向覆盖详情
+         */
         @JsonProperty("skill_coverage")
         private List<SkillCoverage> skillCoverage;
-        /** 每道检索题的逐题评估 */
+        /**
+         * 每道检索题的逐题评估
+         */
         @JsonProperty("question_evals")
         private List<QuestionEval> questionEvals;
     }
 
-    /** 单个技能方向的覆盖情况。 */
+    /**
+     * 单个技能方向的覆盖情况。
+     */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     public static class SkillCoverage {
+        /**
+         * 技技能名称
+         */
         private String skill;
+
+        /**
+         * 是否覆盖
+         */
         private boolean covered;
-        /** 覆盖质量：充足/偏少/缺失 */
+
+        /**
+         * 覆盖质量：充足/偏少/缺失
+         */
         private String quality;
     }
 
-    /** 单道检索题目的评估。 */
+    /**
+     * 单道检索题目的评估。
+     */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     public static class QuestionEval {
+        /**
+         * 题目索引
+         */
         private int index;
+
+        /**
+         * 是否相关
+         */
         private boolean relevant;
+
+        /**
+         * 理由
+         */
         private String reason;
     }
 }
