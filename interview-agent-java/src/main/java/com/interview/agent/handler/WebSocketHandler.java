@@ -19,6 +19,7 @@ import com.interview.agent.rag.RagDocument;
 import com.interview.agent.repository.SessionRepository;
 import com.interview.agent.service.SessionCacheService;
 import com.interview.agent.skill.*;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -113,6 +114,50 @@ public class WebSocketHandler extends TextWebSocketHandler {
         this.chatModel = chatModel;
         this.sessionRepository = sessionRepository;
         this.sessionCacheService = sessionCacheService;
+    }
+
+    /**
+     * 服务重启后收敛遗留的面试会话。
+     * 进程停止会丢失运行中的面试线程，但 MySQL 里的 interviewing 状态仍然存在；
+     * 启动时将这些无法继续执行的会话标记为 terminated，并先合并 Redis 中的实时消息。
+     */
+    @PostConstruct
+    private void recoverInterruptedInterviews() {
+        try {
+            sessionRepository.findAll().stream()
+                    .filter(session -> Session.STATUS_INTERVIEWING.equals(session.getStatus()))
+                    .forEach(this::terminateInterruptedSessionOnStartup);
+        } catch (Exception e) {
+            log.error("[WS] 启动时清理遗留面试失败", e);
+        }
+    }
+
+    /**
+     * 将单个服务重启后遗留的 interviewing 会话持久化为 terminated。
+     * 只有 MySQL 保存成功后才清理 Redis，避免清理失败导致消息丢失。
+     */
+    private void terminateInterruptedSessionOnStartup(Session session) {
+        try {
+            List<ConversationMessage> cachedMessages = sessionCacheService.getMessages(session.getUserId(), session.getId());
+            List<ConversationMessage> allMessages = mergeMessages(session.getChatMessages(), cachedMessages);
+            LocalDateTime terminatedAt = LocalDateTime.now();
+            allMessages.add(ConversationMessage.builder()
+                    .role("system")
+                    .content("因服务器异常，面试已终止，历史消息记录已保存")
+                    .messageType("stage")
+                    .metadata(Map.of("message_type", "stage", "stage", "terminated"))
+                    .createdAt(terminatedAt)
+                    .build());
+            session.setChatMessages(allMessages);
+            session.setStatus(Session.STATUS_TERMINATED);
+            session.setUpdatedAt(terminatedAt);
+            sessionRepository.save(session);
+            sessionCacheService.clearSessionCache(session.getUserId(), session.getId());
+            log.info("[WS] 已清理服务重启遗留面试: userId={}, sessionId={}, cachedMessages={}",
+                    session.getUserId(), session.getId(), cachedMessages.size());
+        } catch (Exception e) {
+            log.error("[WS] 清理遗留面试失败: sessionId={}", session.getId(), e);
+        }
     }
 
     /**
