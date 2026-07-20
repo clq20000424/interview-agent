@@ -15,5 +15,8 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class QuestionDirectionPlan {
+    /**
+     * 考查方向列表
+     */
     private List<QuestionDirection> directions;
 }

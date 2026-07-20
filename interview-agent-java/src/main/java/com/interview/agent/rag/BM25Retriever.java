@@ -1,5 +1,11 @@
 package com.interview.agent.rag;
 
+import lombok.Getter;
+import org.wltea.analyzer.core.IKSegmenter;
+import org.wltea.analyzer.core.Lexeme;
+
+import java.io.IOException;
+import java.io.StringReader;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -12,6 +18,7 @@ import java.util.stream.Collectors;
  */
 public class BM25Retriever {
 
+    @Getter
     private List<RagDocument> documents = new ArrayList<>();
     private Map<String, List<DocTF>> index = new HashMap<>(); // 倒排索引
     private int[] docLen;
@@ -34,10 +41,6 @@ public class BM25Retriever {
         this.topK = topK > 0 ? topK : 10;
     }
 
-    public List<RagDocument> getDocuments() {
-        return documents;
-    }
-
     /**
      * 构建 BM25 倒排索引
      */
@@ -52,11 +55,7 @@ public class BM25Retriever {
             docLen[i] = tokens.size();
             totalLen += tokens.size();
 
-            Map<String, Integer> tfMap = new HashMap<>();
-            for (String t : tokens) {
-                tfMap.merge(t, 1, Integer::sum);
-            }
-
+            Map<String, Integer> tfMap = tokens.stream().collect(Collectors.toMap(t -> t, t -> 1, Integer::sum));
             for (Map.Entry<String, Integer> entry : tfMap.entrySet()) {
                 index.computeIfAbsent(entry.getKey(), k -> new ArrayList<>())
                         .add(new DocTF(i, entry.getValue()));
@@ -132,22 +131,30 @@ public class BM25Retriever {
     }
 
     /**
-     * 简单分词：按空格和标点切分，转小写
+     * 使用 IK 智能模式切分中英文文本，并把英文统一为小写以保证索引和查询使用相同词项。
+     * 技术领域扩展词由 classpath 下的 IKAnalyzer.cfg.xml 和 ik_ext.dic 提供。
+     *
+     * @param text 待分词的文档或查询文本，可以为空
+     * @return 按原文顺序输出的非空词项
      */
     static List<String> tokenize(String text) {
-        text = text.toLowerCase();
-        // 将常见标点替换为空格
-        String replaced = text
-                .replace('，', ' ').replace('。', ' ').replace('、', ' ')
-                .replace('：', ' ').replace('；', ' ').replace('？', ' ')
-                .replace('！', ' ').replace('（', ' ').replace('）', ' ')
-                .replace(',', ' ').replace('.', ' ').replace(':', ' ')
-                .replace(';', ' ').replace('?', ' ').replace('!', ' ')
-                .replace('(', ' ').replace(')', ' ')
-                .replace('\n', ' ').replace('\t', ' ').replace('\r', ' ');
+        if (text == null || text.isBlank()) {
+            return Collections.emptyList();
+        }
 
-        return Arrays.stream(replaced.split("\\s+"))
-                .filter(t -> !t.isEmpty())
-                .collect(Collectors.toList());
+        List<String> tokens = new ArrayList<>();
+        try (StringReader reader = new StringReader(text)) {
+            IKSegmenter segmenter = new IKSegmenter(reader, true);
+            Lexeme lexeme;
+            while ((lexeme = segmenter.next()) != null) {
+                String token = lexeme.getLexemeText().trim().toLowerCase(Locale.ROOT);
+                if (!token.isEmpty()) {
+                    tokens.add(token);
+                }
+            }
+            return tokens;
+        } catch (IOException e) {
+            throw new IllegalStateException("IK 分词失败", e);
+        }
     }
 }

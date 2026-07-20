@@ -21,22 +21,42 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class SampleResult {
 
+    /**
+     * 样本 ID
+     */
     @JsonProperty("sample_id")
     private String sampleId;
 
+    /**
+     * 检索查询
+     */
     private String query;
+
+    /**
+     * 技术领域
+     */
     private String topic;
+
+    /**
+     * 难度
+     */
     private String difficulty;
 
-    /** RAG 实际返回的有序 ID 列表（Rerank 后的顺序） */
+    /**
+     * RAG 实际返回的有序 ID 列表（Rerank 后的顺序）
+     */
     @JsonProperty("retrieved_ids")
     private List<String> retrievedIds;
 
-    /** 标注的相关 ID */
+    /**
+     * 标注的相关 ID
+     */
     @JsonProperty("relevant_ids")
     private List<String> relevantIds;
 
-    /** 命中的交集（按检索结果中出现的顺序） */
+    /**
+     * 命中的交集（按检索结果中出现的顺序）
+     */
     @JsonProperty("hit_ids")
     private List<String> hitIds;
 
@@ -46,9 +66,14 @@ public class SampleResult {
     @JsonProperty("recall_at_20")
     private double recallAt20;
 
+    /**
+     * MRR（Mean Reciprocal Rank）
+     */
     private double mrr;
 
-    /** 第一个命中的排名（1-based，0 表示未命中） */
+    /**
+     * 第一个命中的排名（1-based，0 表示未命中）
+     */
     @JsonProperty("first_hit_rank")
     private int firstHitRank;
 }

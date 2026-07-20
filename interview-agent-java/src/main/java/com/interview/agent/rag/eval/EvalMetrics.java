@@ -4,7 +4,7 @@ import java.util.*;
 
 /**
  * 检索评估指标计算工具。
- *
+ * <p>
  * 指标定义：
  * - Recall@K = |Top-K ∩ Relevant| / |Relevant|
  * - MRR     = 第一个相关文档排名的倒数（未命中为 0）
@@ -16,13 +16,19 @@ public final class EvalMetrics {
     private EvalMetrics() {
     }
 
-    /** 命中结果：命中的 ID（按检索顺序）+ 第一个命中的排名（1-based，0 表示未命中）。 */
+    /**
+     * 命中结果：命中的 ID（按检索顺序）+ 第一个命中的排名（1-based，0 表示未命中）
+     */
     public record HitResult(List<String> hits, int firstHitRank) {
     }
 
     /**
      * calcRecallAtK = |Top-K ∩ Relevant| / |Relevant|
-     * relevantIds 为空时返回 0（这种样本本身有问题，应在标注阶段避免）。
+     *
+     * @param retrievedIds 检索返回的 ID 列表
+     * @param relevantIds  标注的相关 ID 列表
+     * @param k            Top-K 中的 K 值
+     * @return 召回率，relevantIds 为空时返回 0
      */
     public static double calcRecallAtK(List<String> retrievedIds, List<String> relevantIds, int k) {
         if (relevantIds == null || relevantIds.isEmpty()) {
@@ -39,7 +45,13 @@ public final class EvalMetrics {
         return (double) hits / relevantIds.size();
     }
 
-    /** calcMRR 第一个相关文档的排名倒数（rank 1-based，未命中返回 0）。 */
+    /**
+     * calcMRR 第一个相关文档的排名倒数（rank 1-based，未命中返回 0）
+     *
+     * @param retrievedIds 检索返回的 ID 列表
+     * @param relevantIds  标注的相关 ID 列表
+     * @return MRR 值
+     */
     public static double calcMRR(List<String> retrievedIds, List<String> relevantIds) {
         Set<String> relevantSet = new HashSet<>(relevantIds == null ? List.of() : relevantIds);
         for (int i = 0; i < retrievedIds.size(); i++) {
@@ -50,7 +62,13 @@ public final class EvalMetrics {
         return 0;
     }
 
-    /** calcHits 返回命中的 ID（按检索结果顺序）和第一个命中的排名（1-based，0 表示未命中）。 */
+    /**
+     * calcHits 返回命中的 ID（按检索结果顺序）和第一个命中的排名（1-based，0 表示未命中）
+     *
+     * @param retrievedIds 检索返回的 ID 列表
+     * @param relevantIds  标注的相关 ID 列表
+     * @return 命中结果
+     */
     public static HitResult calcHits(List<String> retrievedIds, List<String> relevantIds) {
         Set<String> relevantSet = new HashSet<>(relevantIds == null ? List.of() : relevantIds);
         List<String> hits = new ArrayList<>();

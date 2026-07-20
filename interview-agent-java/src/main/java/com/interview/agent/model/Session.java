@@ -28,66 +28,111 @@ import java.util.List;
 })
 public class Session {
 
+    /**
+     * 会话 ID
+     */
     @Id
     private String id;
 
+    /**
+     * 会话标题
+     */
     @Column(length = 200)
     private String title;
 
+    /**
+     * 会话类型（chat/interview）
+     */
     @Column(name = "session_type", length = 30)
     @JsonProperty("session_type")
     private String sessionType;
 
+    /**
+     * 用户 ID
+     */
     @Column(name = "user_id", nullable = false)
     @JsonProperty("user_id")
     private String userId;
 
+    /**
+     * JD 分析结果
+     */
     @Convert(converter = JDAnalysisConverter.class)
     @Column(columnDefinition = "MEDIUMTEXT")
     @JsonProperty("jd_analysis")
     private JDAnalysis jdAnalysis;
 
+    /**
+     * 简历信息
+     */
     @Convert(converter = ResumeConverter.class)
     @Column(columnDefinition = "MEDIUMTEXT")
     private Resume resume;
 
+    /**
+     * 简历匹配结果
+     */
     @Convert(converter = ResumeMatchResultConverter.class)
     @Column(columnDefinition = "MEDIUMTEXT")
     @JsonProperty("match_result")
     private ResumeMatchResult matchResult;
 
+    /**
+     * 出题计划
+     */
     @Convert(converter = QuestionPlanConverter.class)
     @Column(columnDefinition = "MEDIUMTEXT")
     @JsonProperty("question_plan")
     private QuestionPlan questionPlan;
 
+    /**
+     * 面试状态
+     */
     @Convert(converter = InterviewStateConverter.class)
     @Column(columnDefinition = "MEDIUMTEXT")
     @JsonProperty("interview_state")
     private InterviewState interviewState;
 
+    /**
+     * 评估报告
+     */
     @Convert(converter = EvaluationReportConverter.class)
     @Column(columnDefinition = "MEDIUMTEXT")
     private EvaluationReport report;
 
+    /**
+     * 复习计划
+     */
     @Convert(converter = ReviewPlanConverter.class)
     @Column(columnDefinition = "MEDIUMTEXT")
     @JsonProperty("review_plan")
     private ReviewPlan reviewPlan;
 
+    /**
+     * 聊天消息列表
+     */
     @Convert(converter = ConversationMessagesConverter.class)
     @Column(name = "chat_messages", columnDefinition = "MEDIUMTEXT")
     @JsonProperty("chat_messages")
     private List<ConversationMessage> chatMessages;
 
+    /**
+     * 是否置顶
+     */
     @Builder.Default
     @Column
     private Boolean pinned = false;
 
+    /**
+     * 置顶时间
+     */
     @Column(name = "pinned_at")
     @JsonProperty("pinned_at")
     private LocalDateTime pinnedAt;
 
+    /**
+     * 会话状态（init/jd_analyzed/resume_matched/planned/interviewing/terminated/evaluated/completed）
+     */
     @Column(nullable = false, length = 50)
     private String status;  // init/jd_analyzed/resume_matched/planned/interviewing/terminated/evaluated/completed
 

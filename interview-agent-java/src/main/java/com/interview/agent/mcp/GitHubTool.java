@@ -36,7 +36,8 @@ public class GitHubTool {
 
     /**
      * 搜索 GitHub 仓库
-     * @param query 搜索关键词（如 "redis tutorial stars:>100"）
+     *
+     * @param query      搜索关键词（如 "redis tutorial stars:>100"）
      * @param maxResults 最大结果数
      * @return 格式化的搜索结果（Markdown 格式）
      */
@@ -84,7 +85,9 @@ public class GitHubTool {
         }
     }
 
-    /** 暴露为 Spring AI ToolCallback，供 ReactAgent 在生成复习计划时按需自主调用 */
+    /**
+     * 暴露为 Spring AI ToolCallback，供 ReactAgent 在生成复习计划时按需自主调用
+     */
     public ToolCallback asToolCallback() {
         return FunctionToolCallback
                 .builder("search_github_repos", (GithubSearchRequest req) -> {
@@ -98,6 +101,9 @@ public class GitHubTool {
                 .build();
     }
 
-    /** ReactAgent 调用本工具时的入参 */
-    public record GithubSearchRequest(String query) {}
+    /**
+     * ReactAgent 调用本工具时的入参
+     */
+    public record GithubSearchRequest(String query) {
+    }
 }

@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -33,14 +34,14 @@ import java.util.stream.Stream;
  *   mvn spring-boot:run -Dspring-boot.run.arguments="eval --note baseline"
  *   java -jar interview-agent.jar eval --note baseline --skip-rerank
  * </pre>
- *
+ * <p>
  * 三种模式：
  * <ul>
  *   <li>{@code --prepare}      解析 MD 题库 → 写入 Milvus → 导出 manifest.json</li>
  *   <li>{@code --gen-dataset}  基于 manifest 自动生成评估数据集</li>
  *   <li>默认                    加载 dataset → 检索 → 计算指标 → 输出报告（JSON + Markdown）</li>
  * </ul>
- *
+ * <p>
  * 非 {@code eval} 启动时该 Runner 直接返回，不影响 Web 服务。
  *
  * @author 陈龙强
@@ -50,7 +51,9 @@ import java.util.stream.Stream;
 @Order(1)
 public class EvalCommandRunner implements CommandLineRunner {
 
-    /** 评估专用 userID，和业务用户隔离 */
+    /**
+     * 评估专用 userID，和业务用户隔离
+     */
     private static final String EVAL_USER_ID = "eval_user";
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
@@ -111,10 +114,10 @@ public class EvalCommandRunner implements CommandLineRunner {
         if (mdFiles.isEmpty()) {
             throw new IllegalStateException("[Prepare] 未找到 MD 题库文件，请确认 " + questionsDir + " 目录结构正确（<topic>_interview/<name>.md）");
         }
-        System.out.printf("[Prepare] 找到 %d 个 MD 题库文件%n", mdFiles.size());
+        log.info("[Prepare] 找到 {} 个 MD 题库文件", mdFiles.size());
 
         // 2. 清除旧的 eval_user 数据
-        System.out.println("[Prepare] 清除 eval_user 旧数据...");
+        log.info("[Prepare] 清除 eval_user 旧数据...");
         try {
             milvusStore.deleteByUserID(EVAL_USER_ID);
         } catch (Exception e) {
@@ -132,7 +135,7 @@ public class EvalCommandRunner implements CommandLineRunner {
                     ? dirName.substring(0, dirName.length() - "_interview".length())
                     : dirName;
 
-            System.out.printf("%n[Prepare] 解析: %s%n", mdFile);
+            log.info("[Prepare] 解析: {}", mdFile);
 
             String rawText;
             try {
@@ -141,11 +144,11 @@ public class EvalCommandRunner implements CommandLineRunner {
                 log.warn("[Prepare] 读取 {} 失败: {}，跳过", mdFile, e.getMessage());
                 continue;
             }
-            System.out.printf("[Prepare] 文件长度: %d 字符%n", rawText.length());
+            log.info("[Prepare] 文件长度: {} 字符", rawText.length());
 
-            System.out.println("[Prepare] LLM 解析中...");
+            log.info("[Prepare] LLM 解析中...");
             QuestionParser.ParseResult result = questionParser.parseQuestionBank(rawText);
-            System.out.printf("[Prepare] 解析完成: 识别 %d 道，通过 %d 道，失败 %d 道%n",
+            log.info("[Prepare] 解析完成: 识别 {} 道，通过 {} 道，失败 {} 道",
                     result.getTotal(), result.getSuccess(), result.getFailed());
 
             if (result.getSuccess() == 0 || result.getQuestions().isEmpty()) {
@@ -185,7 +188,7 @@ public class EvalCommandRunner implements CommandLineRunner {
 
             try {
                 milvusStore.loadParsedQuestions(EVAL_USER_ID, baseName, milvusQuestions);
-                System.out.printf("[Prepare] ✓ %s: %d 道题写入 Milvus%n", baseName, milvusQuestions.size());
+                log.info("[Prepare] ✓ {}: {} 道题写入 Milvus", baseName, milvusQuestions.size());
             } catch (Exception e) {
                 log.warn("[Prepare] 写入 Milvus 失败 ({}): {}", mdFile, e.getMessage());
             }
@@ -198,11 +201,11 @@ public class EvalCommandRunner implements CommandLineRunner {
         // 4. 导出 manifest.json
         writeJson(Path.of(manifestPath), allEntries);
 
-        System.out.printf("%n======== Prepare 完成 ========%n");
-        System.out.printf("题目总数:   %d%n", allEntries.size());
-        topicCounter.forEach((topic, count) -> System.out.printf("  %s: %d 道%n", topic, count));
-        System.out.printf("Manifest:   %s%n", manifestPath);
-        System.out.printf("%n下一步：基于 manifest 中的 ID 标注评估数据集，或运行 eval --gen-dataset 自动生成%n");
+        log.info("======== Prepare 完成 ========");
+        log.info("题目总数:   {}", allEntries.size());
+        topicCounter.forEach((topic, count) -> log.info("  {}: {} 道", topic, count));
+        log.info("Manifest:   {}", manifestPath);
+        log.info("下一步：基于 manifest 中的 ID 标注评估数据集，或运行 eval --gen-dataset 自动生成");
     }
 
     // ============================================================
@@ -255,15 +258,15 @@ public class EvalCommandRunner implements CommandLineRunner {
 
         writeJson(Path.of(datasetPath), samples);
 
-        System.out.printf("%n======== 评估数据集生成完成 ========%n");
-        System.out.printf("样本总数:   %d%n", samples.size());
+        log.info("======== 评估数据集生成完成 ========");
+        log.info("样本总数:   {}", samples.size());
         for (String t : topics) {
             String displayName = topicDisplayName(t);
             long c = samples.stream().filter(s -> displayName.equals(s.getTopic())).count();
-            System.out.printf("  %s: %d 条%n", displayName, c);
+            log.info("  {}: {} 条", displayName, c);
         }
-        System.out.printf("输出路径:   %s%n", datasetPath);
-        System.out.printf("%n下一步：运行 eval --note baseline 执行评估%n");
+        log.info("输出路径:   {}", datasetPath);
+        log.info("下一步：运行 eval --note baseline 执行评估");
     }
 
     // ============================================================
@@ -277,15 +280,15 @@ public class EvalCommandRunner implements CommandLineRunner {
                 Files.readString(Path.of(datasetPath), StandardCharsets.UTF_8),
                 new TypeReference<>() {
                 });
-        System.out.printf("[Eval] 数据集加载完成: %s (样本数: %d)%n", datasetPath, samples.size());
+        log.info("[Eval] 数据集加载完成: {} (样本数: {})", datasetPath, samples.size());
 
         // 2. 从 manifest 加载 BM25 索引（不依赖本地 JSON 题库文件）
         loadBm25FromManifest(manifestPath);
-        System.out.printf("[Eval] BM25 索引就绪 (userID=%s)%n", EVAL_USER_ID);
+        log.info("[Eval] BM25 索引就绪 (userID={})", EVAL_USER_ID);
 
         String rerankerType = skipRerank ? "none" : retrievalEvaluator.activeRerankerType();
         if (skipRerank) {
-            System.out.println("[Eval] 已跳过 Reranker");
+            log.info("[Eval] 已跳过 Reranker");
         }
 
         // 3. 构造 RAGConfig 快照
@@ -302,7 +305,7 @@ public class EvalCommandRunner implements CommandLineRunner {
                 .build();
 
         // 4. 跑评估
-        System.out.println("[Eval] 开始评估...");
+        log.info("[Eval] 开始评估...");
         EvalReport report = retrievalEvaluator.runEvaluation(samples, EVAL_USER_ID, ragCfg, !skipRerank);
         report.setDatasetPath(datasetPath);
 
@@ -316,23 +319,23 @@ public class EvalCommandRunner implements CommandLineRunner {
         EvalReportRenderer.saveReportJson(report, jsonPath);
         EvalReportRenderer.saveReportMarkdown(report, mdPath);
 
-        System.out.println();
-        System.out.println("======== 评估完成 ========");
-        System.out.printf("样本数:     %d%n", report.getSampleCount());
-        System.out.printf("耗时:       %s%n", report.getDuration());
-        System.out.printf("Recall@10:  %.4f%n", report.getOverall().getRecallAt10());
-        System.out.printf("Recall@20:  %.4f%n", report.getOverall().getRecallAt20());
-        System.out.printf("MRR:        %.4f%n", report.getOverall().getMrr());
-        System.out.println();
-        System.out.printf("JSON 报告:     %s%n", jsonPath);
-        System.out.printf("Markdown 报告: %s%n", mdPath);
+        log.info("======== 评估完成 ========");
+        log.info("样本数:     {}", report.getSampleCount());
+        log.info("耗时:       {}", report.getDuration());
+        log.info("Recall@10:  {}", String.format("%.4f", report.getOverall().getRecallAt10()));
+        log.info("Recall@20:  {}", String.format("%.4f", report.getOverall().getRecallAt20()));
+        log.info("MRR:        {}", String.format("%.4f", report.getOverall().getMrr()));
+        log.info("JSON 报告:     {}", jsonPath);
+        log.info("Markdown 报告: {}", mdPath);
     }
 
     // ============================================================
     // 辅助：数据集自动生成
     // ============================================================
 
-    /** 从 manifest 条目生成 SearchQuery 风格的查询（关键词组合，不是完整问句）。 */
+    /**
+     * 从 manifest 条目生成 SearchQuery 风格的查询（关键词组合，不是完整问句）。
+     */
     static String generateQueryFromEntry(ManifestEntry entry) {
         String content = entry.getContent() == null ? "" : entry.getContent();
 
@@ -373,7 +376,9 @@ public class EvalCommandRunner implements CommandLineRunner {
         return content.trim();
     }
 
-    /** 找出和种子题相关的文档 ID：种子题本身 + 同 topic 中 skill 重叠 ≥2 的题目（最多 2 个）。 */
+    /**
+     * 找出和种子题相关的文档 ID：种子题本身 + 同 topic 中 skill 重叠 ≥2 的题目（最多 2 个）。
+     */
     static List<String> findRelatedEntries(ManifestEntry seed, List<ManifestEntry> group) {
         List<String> result = new ArrayList<>();
         result.add(seed.getId());
@@ -410,7 +415,9 @@ public class EvalCommandRunner implements CommandLineRunner {
         return result;
     }
 
-    /** 将 manifest 中的 topic 前缀转为可读名称。 */
+    /**
+     * 将 manifest 中的 topic 前缀转为可读名称。
+     */
     static String topicDisplayName(String topic) {
         return switch (topic) {
             case "go" -> "Go";
@@ -426,7 +433,9 @@ public class EvalCommandRunner implements CommandLineRunner {
     // 辅助：manifest / BM25 / 文件
     // ============================================================
 
-    /** 从 manifest.json 加载题目到 BM25 索引（content + reference，和 Milvus 写入格式一致）。 */
+    /**
+     * 从 manifest.json 加载题目到 BM25 索引（content + reference，和 Milvus 写入格式一致）。
+     */
     private void loadBm25FromManifest(String manifestPath) {
         List<ManifestEntry> entries;
         try {
@@ -482,14 +491,49 @@ public class EvalCommandRunner implements CommandLineRunner {
     // ============================================================
 
     private static class Args {
+        /**
+         * 是否执行准备模式（解析 MD 题库 → 写入 Milvus → 导出 manifest）
+         */
         boolean prepare = false;
+
+        /**
+         * 是否执行数据集生成模式
+         */
         boolean genDataset = false;
+
+        /**
+         * 是否跳过 Rerank
+         */
         boolean skipRerank = false;
+
+        /**
+         * 评估数据集路径
+         */
         String datasetPath = "data/eval/dataset_v1.json";
+
+        /**
+         * 报告输出目录
+         */
         String outDir = "data/eval/reports";
+
+        /**
+         * 实验备注
+         */
         String note = "";
+
+        /**
+         * 题库目录
+         */
         String questionsDir = "data/questions";
+
+        /**
+         * Manifest 文件路径
+         */
         String manifestPath = "data/eval/manifest.json";
+
+        /**
+         * 每个 topic 的样本数量
+         */
         int sampleCount = 50;
     }
 

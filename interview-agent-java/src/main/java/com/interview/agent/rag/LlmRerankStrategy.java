@@ -14,8 +14,8 @@ import java.util.*;
  * LLM 重排策略：用大模型对候选文档做语义重排。
  * - 截取前 200 字符避免 prompt 过长
  * - 全量重排（不过滤丢弃）：朴素 rerank 用"过滤掉不相关"的 prompt 会让 LLM 误删相关题、
- *   反而拉低 Recall（实测整体 0.7567→0.6533）。改为只重排序、保留全部候选，把召回在 11-20 位
- *   的相关题提进前 10，让 rerank 从负优化变正优化。
+ * 反而拉低 Recall（实测整体 0.7567→0.6533）。改为只重排序、保留全部候选，把召回在 11-20 位
+ * 的相关题提进前 10，让 rerank 从负优化变正优化。
  * - 失败时返回原始顺序。
  *
  * @author 陈龙强
@@ -26,14 +26,14 @@ public class LlmRerankStrategy implements RerankStrategy {
 
     private static final String RERANK_PROMPT = """
             你是一个文档相关性排序专家。请根据用户查询，对以下【全部】候选文档按相关性从高到低重新排序。
-
+            
             重要规则：必须包含上面所有候选文档的 ID，不要丢弃、不要过滤掉任何文档，只调整它们的先后顺序——把与查询最相关的排在最前面，不太相关的排在后面。
-
+            
             用户查询：%s
-
+            
             候选文档：
             %s
-
+            
             请输出重排序后的【完整】文档 ID 列表（JSON 数组格式，从最相关到最不相关，必须包含上面出现的每一个文档 ID），只输出 JSON 数组，不要输出其他内容。
             示例输出：["doc_3", "doc_1", "doc_2"]""";
 
@@ -82,7 +82,8 @@ public class LlmRerankStrategy implements RerankStrategy {
                 respText = respText.substring(start, end + 1);
             }
 
-            List<String> rankedIDs = objectMapper.readValue(respText, new TypeReference<>() {});
+            List<String> rankedIDs = objectMapper.readValue(respText, new TypeReference<>() {
+            });
 
             // 按 LLM 排序重组；不丢弃任何候选——LLM 漏掉/误删的按原召回顺序补在末尾，
             // 保证 rerank 不会减少召回集合，只改善排序（相关题前移），从而不会拉低 Recall。

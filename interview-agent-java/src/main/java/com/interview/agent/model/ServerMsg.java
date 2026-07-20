@@ -21,21 +21,51 @@ import java.util.List;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ServerMsg {
-    // chat_reply/stage_change/question/review_item/memory_weak_points/question_directions/question_plan_details/score
+    /**
+     * 消息类型（chat_reply/stage_change/question/review_item/memory_weak_points/question_directions/question_plan_details/score）
+     */
     private String type;
+
+    /**
+     * 消息内容
+     */
     private String content;
+
+    /**
+     * 当前阶段
+     */
     private String stage;
+
+    /**
+     * 消息文本
+     */
     private String message;
 
+    /**
+     * 当前题目编号
+     */
     @JsonProperty("question_num")
     private Integer questionNum;
 
+    /**
+     * 得分
+     */
     private Double score;
+
+    /**
+     * 反馈
+     */
     private String feedback;
 
+    /**
+     * 答对的要点列表
+     */
     @JsonProperty("key_points_hit")
     private List<String> keyPointsHit;
 
+    /**
+     * 答漏的要点列表
+     */
     @JsonProperty("key_points_missed")
     private List<String> keyPointsMissed;
 }

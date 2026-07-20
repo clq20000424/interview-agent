@@ -58,7 +58,7 @@ app:
     enabled: ${AUTH_ENABLED:true}
   rag:
     reranker:
-      # 重排策略：cross-encoder（DashScope gte-rerank 专用重排模型，默认，主流程出题用）| llm（大模型语义重排）| none（不重排）
+      # 重排策略：cross-encoder（DashScope qwen3-rerank 专用重排模型，默认，主流程出题用）| llm（大模型语义重排）| none（不重排）
       type: ${RERANKER_TYPE:cross-encoder}
-      # cross-encoder 使用的 DashScope 重排模型；gte-rerank-v2 为当前可用版本
-      cross-encoder-model: ${RERANK_MODEL:gte-rerank-v2}
+      # cross-encoder 使用的 DashScope 重排模型；推荐使用 qwen3-rerank（gte-rerank-v2 已于 2026 年 5 月 30 日下线）
+      cross-encoder-model: ${RERANK_MODEL:qwen3-rerank}

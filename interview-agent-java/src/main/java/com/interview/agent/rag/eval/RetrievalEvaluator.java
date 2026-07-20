@@ -7,11 +7,14 @@ import com.interview.agent.rag.Reranker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * RAG 离线检索评估流水线。
- *
+ * <p>
  * 整体流程：
  * 1. 遍历每条样本，用 sample.query 跑完整的 RAG 检索（Milvus + BM25 + Rerank）
  * 2. 对比检索结果和 sample.relevantDocIds，计算 Recall@10 / Recall@20 / MRR
@@ -26,7 +29,9 @@ import java.util.*;
 @Component
 public class RetrievalEvaluator {
 
-    /** 评估时 Milvus 检索 + LLM rerank 的 TopK（默认 20；可用环境变量 EVAL_RETRIEVE_TOP_K 调整做 A/B 对比） */
+    /**
+     * 评估时 Milvus 检索 + LLM rerank 的 TopK（默认 20；可用环境变量 EVAL_RETRIEVE_TOP_K 调整做 A/B 对比）
+     */
     public static final int RETRIEVE_TOP_K =
             Integer.parseInt(System.getenv().getOrDefault("EVAL_RETRIEVE_TOP_K", "20"));
 
@@ -40,7 +45,9 @@ public class RetrievalEvaluator {
         this.reranker = reranker;
     }
 
-    /** 当前生效的 rerank 类型（llm / cross-encoder / none），供评估报告如实记录 */
+    /**
+     * 当前生效的 rerank 类型（llm / cross-encoder / none），供评估报告如实记录
+     */
     public String activeRerankerType() {
         return reranker != null ? reranker.activeType() : "none";
     }
@@ -48,10 +55,10 @@ public class RetrievalEvaluator {
     /**
      * 对评估数据集做全量检索评估，返回完整报告。
      *
-     * @param dataset      评估样本集
-     * @param userId       题库按 user 隔离，评估用哪个用户的题库（eval_user）
-     * @param ragCfg       RAG 配置快照（写入报告，便于 A/B 对比）
-     * @param useReranker  是否启用 LLM Rerank（false 用于 A/B 对比）
+     * @param dataset     评估样本集
+     * @param userId      题库按 user 隔离，评估用哪个用户的题库（eval_user）
+     * @param ragCfg      RAG 配置快照（写入报告，便于 A/B 对比）
+     * @param useReranker 是否启用 LLM Rerank（false 用于 A/B 对比）
      */
     public EvalReport runEvaluation(List<EvalSample> dataset, String userId,
                                     RagConfigSnapshot ragCfg, boolean useReranker) {

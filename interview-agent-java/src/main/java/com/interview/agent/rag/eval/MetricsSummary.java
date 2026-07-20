@@ -17,13 +17,25 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class MetricsSummary {
 
+    /**
+     * 样本数量
+     */
     private int count;
 
+    /**
+     * Recall@10
+     */
     @JsonProperty("recall_at_10")
     private double recallAt10;
 
+    /**
+     * Recall@20
+     */
     @JsonProperty("recall_at_20")
     private double recallAt20;
 
+    /**
+     * MRR（Mean Reciprocal Rank）
+     */
     private double mrr;
 }

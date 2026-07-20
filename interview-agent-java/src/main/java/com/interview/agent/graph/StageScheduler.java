@@ -23,16 +23,23 @@ import java.util.Map;
  */
 class StageScheduler {
 
-    /** 单个面试阶段的配置：题型 + 该阶段实际提问数（从候选池抽取的上限）。 */
-    record StageConfig(String type, int askNum) {}
+    /**
+     * 单个面试阶段的配置：题型 + 该阶段实际提问数（从候选池抽取的上限）。
+     */
+    record StageConfig(String type, int askNum) {
+    }
 
-    /** 依据当前难度与连对/连错次数，返回下一题难度。由调用方注入（生产环境包装 QuestionPlanner.adjustDifficulty）。 */
+    /**
+     * 依据当前难度与连对/连错次数，返回下一题难度。由调用方注入（生产环境包装 QuestionPlanner.adjustDifficulty）。
+     */
     @FunctionalInterface
     interface AdjustFunc {
         String adjust(String current, int consecRight, int consecWrong);
     }
 
-    /** 面试阶段顺序与每阶段提问数：basic → experience → design。 */
+    /**
+     * 面试阶段顺序与每阶段提问数：basic → experience → design。
+     */
     static final List<StageConfig> DEFAULT_STAGES = List.of(
             new StageConfig("basic", 8),
             new StageConfig("experience", 5),
@@ -52,7 +59,9 @@ class StageScheduler {
     private int consecRight;
     private int consecWrong;
 
-    /** 按题型给候选题分组，构建调度器。 */
+    /**
+     * 按题型给候选题分组，构建调度器。
+     */
     StageScheduler(List<StageConfig> stages, List<PlannedQuestion> questions, AdjustFunc adjust) {
         this.stages = stages;
         this.adjust = adjust;
@@ -62,7 +71,9 @@ class StageScheduler {
         }
     }
 
-    /** 预计算实际提问总数（每阶段取 min(askNum, 候选库存) 之和）。 */
+    /**
+     * 预计算实际提问总数（每阶段取 min(askNum, 候选库存) 之和）。
+     */
     int totalToAsk() {
         int total = 0;
         for (StageConfig st : stages) {
@@ -72,7 +83,9 @@ class StageScheduler {
         return total;
     }
 
-    /** 取出的下一题（含其难度），全部阶段问完返回 null。进入新阶段时内部自动重置难度状态。 */
+    /**
+     * 取出的下一题（含其难度），全部阶段问完返回 null。进入新阶段时内部自动重置难度状态。
+     */
     Picked next() {
         while (true) {
             // 尚未开始、当前阶段已抽满、或当前池已空 → 推进到下一个可用阶段。
@@ -91,7 +104,9 @@ class StageScheduler {
         }
     }
 
-    /** 推进到下一个有候选题的阶段，并重置阶段内难度状态。返回 false 表示没有更多阶段。 */
+    /**
+     * 推进到下一个有候选题的阶段，并重置阶段内难度状态。返回 false 表示没有更多阶段。
+     */
     private boolean advanceStage() {
         int from = started ? stageIdx + 1 : 0;
         for (int i = from; i < stages.size(); i++) {
@@ -135,6 +150,9 @@ class StageScheduler {
         return consecWrong;
     }
 
-    /** next() 的返回值：被抽中的题目 + 它被抽取时的难度档。 */
-    record Picked(PlannedQuestion question, String difficulty) {}
+    /**
+     * next() 的返回值：被抽中的题目 + 它被抽取时的难度档。
+     */
+    record Picked(PlannedQuestion question, String difficulty) {
+    }
 }

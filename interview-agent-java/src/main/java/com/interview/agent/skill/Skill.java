@@ -9,15 +9,23 @@ package com.interview.agent.skill;
  */
 public interface Skill {
 
-    /** 技能名称（唯一标识） */
+    /**
+     * 技能名称（唯一标识）
+     */
     String name();
 
-    /** 技能描述（用于帮助信息展示） */
+    /**
+     * 技能描述（用于帮助信息展示）
+     */
     String description();
 
-    /** 判断用户输入是否触发该 Skill */
+    /**
+     * 判断用户输入是否触发该 Skill
+     */
     boolean match(String input);
 
-    /** 处理一轮交互 */
+    /**
+     * 处理一轮交互
+     */
     SkillResponse handle(String input, SkillState state);
 }

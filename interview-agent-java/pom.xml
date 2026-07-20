@@ -22,6 +22,7 @@
         <spring-ai-alibaba.version>1.1.2.0</spring-ai-alibaba.version>
         <milvus-sdk.version>2.4.2</milvus-sdk.version>
         <jjwt.version>0.12.6</jjwt.version>
+        <ik-analyzer.version>5.1.0</ik-analyzer.version>
     </properties>
 
     <dependencies>
@@ -64,6 +65,13 @@
             <groupId>io.milvus</groupId>
             <artifactId>milvus-sdk-java</artifactId>
             <version>${milvus-sdk.version}</version>
+        </dependency>
+
+        <!-- IK 中文分词核心，不引入 Lucene -->
+        <dependency>
+            <groupId>org.truenewx</groupId>
+            <artifactId>ik-analyzer-core</artifactId>
+            <version>${ik-analyzer.version}</version>
         </dependency>
 
         <!-- MySQL -->

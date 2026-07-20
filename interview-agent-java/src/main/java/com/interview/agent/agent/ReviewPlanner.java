@@ -40,7 +40,9 @@ public class ReviewPlanner {
 
     private static final int SINGLE_TURN_MAX_ATTEMPTS = 2;
 
-    /** 让编排层能够区分 AI 生成和本地降级，并向用户明确披露。 */
+    /**
+     * 让编排层能够区分 AI 生成和本地降级，并向用户明确披露。
+     */
     public record GenerationResult(ReviewPlan plan, boolean fallback) {
     }
 
@@ -49,7 +51,9 @@ public class ReviewPlanner {
             .registerModule(new JavaTimeModule())
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-    /** GitHub 工具（仅配置了 token 时存在）；存在时作为 ReactAgent 的工具注入 */
+    /**
+     * GitHub 工具（仅配置了 token 时存在）；存在时作为 ReactAgent 的工具注入
+     */
     @Setter
     @Autowired(required = false)
     private GitHubTool gitHubTool;
@@ -58,18 +62,18 @@ public class ReviewPlanner {
     // 具体 JSON 输出格式放到用户消息里（用户输入不经模板渲染）。
     private static final String REVIEW_PLANNER_INSTRUCTION = """
             你是一位技术学习路径规划专家，要根据候选人的面试评估报告制定一份个性化的复习计划。
-
+            
             你可以使用 search_github_repos 工具：当候选人存在明显薄弱领域、需要推荐真实可用的开源项目或教程时，
             自行决定用合适的英文技术关键词（通常取 1~3 个高优先级薄弱点）调用它，并把搜到的真实项目写进推荐资源、
             type 设为 repo、url 用搜到的真实链接。也可以补充经典书籍、官方文档等非 GitHub 资源。
             如果工具不可用或没搜到结果，就只用你已知的优质资源，不要编造链接。
-
+            
             规划原则：优先解决高优先级薄弱点；每个学习项给出可执行的具体行动；推荐资源实用、高质量；时间估算合理。
             最终只输出用户要求的那个纯 JSON 对象，不要输出任何工具调用过程、思考说明或多余文字。""";
 
     // 用户消息里携带报告与 JSON 结构要求（含 {}，但用户输入不被模板渲染，安全）。
     private static final String OUTPUT_FORMAT = """
-
+            
             请严格按以下 JSON 格式输出（只输出 JSON）：
             {
               "weak_areas": [
@@ -160,9 +164,9 @@ public class ReviewPlanner {
     /**
      * 尝试把指定来源的模型文本解析为复习计划，解析失败时记录日志并允许调用方继续降级。
      *
-     * @param content 模型输出文本
+     * @param content   模型输出文本
      * @param sessionId 当前面试 Session ID
-     * @param source 输出来源，用于区分 ReactAgent 和普通模型日志
+     * @param source    输出来源，用于区分 ReactAgent 和普通模型日志
      * @return 解析成功的复习计划；内容为空或解析失败时返回 null
      */
     private ReviewPlan tryParsePlan(String content, String sessionId, String source) {
@@ -268,9 +272,9 @@ public class ReviewPlanner {
     /**
      * 从维度得分中查找与薄弱主题名称相互包含的得分，找不到时使用总分兜底。
      *
-     * @param topic 薄弱主题
+     * @param topic           薄弱主题
      * @param dimensionScores 评估报告中的维度得分
-     * @param defaultScore 未匹配到维度时使用的默认分数
+     * @param defaultScore    未匹配到维度时使用的默认分数
      * @return 主题对应的维度分数或默认分数
      */
     private double findTopicScore(String topic, Map<String, Double> dimensionScores, double defaultScore) {

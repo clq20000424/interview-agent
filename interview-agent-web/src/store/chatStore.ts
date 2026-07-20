@@ -77,7 +77,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     setCurrentSessionId: (id) => set({currentSessionId: id}),
 
-    clearMessages: () => set({messages: [], currentSessionId: null}),
+    /**
+     * 清空当前会话并重置面试运行状态。
+     * 新建会话时必须同时清除旧会话的 interviewing 标记，否则“终止面试”按钮会残留。
+     */
+    clearMessages: () => set({
+        messages: [],
+        currentSessionId: null,
+        isInterviewing: false,
+        currentStage: '',
+    }),
 
     /**
      * 将服务端消息分发到对应 UI 状态；收到 session_started 时同步当前 Session ID，

@@ -15,14 +15,30 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class QAPair {
 
+    /**
+     * 问题
+     */
     private PlannedQuestion question;
 
+    /**
+     * 用户答案
+     */
     @JsonProperty("user_answer")
     private String userAnswer;
 
+    /**
+     * 得分
+     */
     private double score;
+
+    /**
+     * 反馈
+     */
     private String feedback;
 
+    /**
+     * 是否追问
+     */
     @JsonProperty("follow_up_used")
     private boolean followUpUsed;
 }
