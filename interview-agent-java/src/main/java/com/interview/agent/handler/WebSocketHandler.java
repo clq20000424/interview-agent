@@ -650,13 +650,27 @@ public class WebSocketHandler extends TextWebSocketHandler {
                 sendServerMsg(ws.conn, ServerMsg.builder()
                         .type("stage_change").stage("upload_llm").message("正在用 LLM 提取题目...").build());
 
-                // LLM 解析题目
-                QuestionParser.ParseResult result = questionParser.parseQuestionBank(text);
+                // LLM 并行解析题目，每完成一段就通过同一个阶段消息向前端更新累计进度。
+                QuestionParser.ParseResult result = questionParser.parseQuestionBank(text,
+                        (completedSegments, totalSegments, parsedQuestions) -> sendServerMsg(ws.conn,
+                                ServerMsg.builder()
+                                        .type("stage_change")
+                                        .stage("upload_llm_progress")
+                                        .message(String.format("正在解析题库：已完成 %d/%d 段，累计识别 %d 道题",
+                                                completedSegments, totalSegments, parsedQuestions))
+                                        .build()));
+
+                sendServerMsg(ws.conn, ServerMsg.builder()
+                        .type("stage_change")
+                        .stage("upload_llm_done")
+                        .message(String.format("题库解析完成：共识别 %d 道，有效 %d 道，过滤 %d 道",
+                                result.getTotal(), result.getSuccess(), result.getFailed()))
+                        .build());
 
                 if (result.getQuestions().isEmpty()) {
                     sendServerMsg(ws.conn, ServerMsg.builder()
                             .type("upload_result")
-                            .content(String.format("⚠️ 未能从该文件解析出有效题目（共识别 %d 道，均因内容过短等原因未通过校验）。请确认上传的是面试题库内容。", result.getTotal()))
+                            .content(String.format("⚠️ 未能从该文件解析出有效题目（共识别 %d 道，均因内容不完整或格式异常未通过校验）。请确认上传的是面试题库内容。", result.getTotal()))
                             .build());
                     return;
                 }
@@ -694,9 +708,10 @@ public class WebSocketHandler extends TextWebSocketHandler {
                 // 保存文件 hash
                 redisStore.saveFileHash(ws.userID, filename, hash);
 
-                String resultMsg = String.format("✅ 题库导入成功！成功录入 %d 道题。", result.getSuccess());
+                String resultMsg = String.format("✅ 题库导入成功！共识别 %d 道，有效录入 %d 道。",
+                        result.getTotal(), result.getSuccess());
                 if (result.getFailed() > 0) {
-                    resultMsg += String.format("\n（另有 %d 道因题目内容过短等原因被自动忽略，不影响其余题目的正常使用）", result.getFailed());
+                    resultMsg += String.format("\n（另有 %d 道因内容不完整或格式异常被自动忽略，不影响其余题目的正常使用）", result.getFailed());
                 }
 
                 sendServerMsg(ws.conn, ServerMsg.builder()
@@ -1267,7 +1282,12 @@ public class WebSocketHandler extends TextWebSocketHandler {
         try {
             if (session.isOpen()) {
                 String json = objectMapper.writeValueAsString(msg);
-                session.sendMessage(new TextMessage(json));
+                // 并行解析分段可能同时推送进度，WebSocketSession 本身不保证并发发送安全。
+                synchronized (session) {
+                    if (session.isOpen()) {
+                        session.sendMessage(new TextMessage(json));
+                    }
+                }
             }
         } catch (Exception e) {
             log.error("[WS] 发送消息失败: {}", e.getMessage());
@@ -1282,13 +1302,14 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 格式化题库解析的校验失败详情，无错误返回 null（NON_NULL 不序列化）
+     * 将题库校验失败详情格式化为用户可读文本，不暴露内部字段名；无错误时返回 null。
      */
-    private String formatParseErrors(List<QuestionParser.ParseError> errs) {
+    static String formatParseErrors(List<QuestionParser.ParseError> errs) {
         if (errs == null || errs.isEmpty()) return null;
         StringBuilder sb = new StringBuilder();
         for (QuestionParser.ParseError e : errs) {
-            sb.append(String.format("#%d: %s%n", e.getIndex(), e.getReason()));
+            sb.append("第").append(e.getIndex()).append("题：")
+                    .append(e.getReason()).append('\n');
         }
         return sb.toString();
     }

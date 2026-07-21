@@ -103,6 +103,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 break
 
             case 'stage_change':
+                if (msg.stage === 'upload_llm_progress') {
+                    // 并行解析每完成一段只更新同一条进度消息，避免消息列表被分段进度刷屏。
+                    set((state) => {
+                        const messages = [...state.messages]
+                        let progressIndex = -1
+                        for (let i = messages.length - 1; i >= 0; i--) {
+                            if (messages[i].messageType === 'upload_result'
+                                || (messages[i].messageType === 'stage'
+                                    && messages[i].stage === 'upload_llm_done')) {
+                                break
+                            }
+                            if (messages[i].messageType === 'stage'
+                                && messages[i].stage === 'upload_llm_progress') {
+                                progressIndex = i
+                                break
+                            }
+                        }
+
+                        if (progressIndex >= 0) {
+                            messages[progressIndex] = {
+                                ...messages[progressIndex],
+                                content: msg.message,
+                                timestamp: now,
+                            }
+                        } else {
+                            messages.push({
+                                id: nextId(), role: 'system', content: msg.message,
+                                messageType: 'stage', stage: msg.stage, timestamp: now,
+                            })
+                        }
+                        return {messages, currentStage: msg.stage}
+                    })
+                    break
+                }
                 set({currentStage: msg.stage})
                 get().addMessage({
                     id: nextId(), role: 'system', content: msg.message,
