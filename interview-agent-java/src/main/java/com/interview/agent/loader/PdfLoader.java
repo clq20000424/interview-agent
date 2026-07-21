@@ -16,6 +16,9 @@ import java.io.IOException;
 @Component
 public class PdfLoader {
 
+    /**
+     * 按 PDF 原始阅读顺序提取纯文本，不添加标题标记或修改题目内容。
+     */
     public String loadPDF(String path) throws IOException {
         try (PDDocument document = Loader.loadPDF(new File(path))) {
             int totalPages = document.getNumberOfPages();
@@ -24,6 +27,7 @@ public class PdfLoader {
             }
 
             PDFTextStripper stripper = new PDFTextStripper();
+            stripper.setSortByPosition(true);
             String content = stripper.getText(document).trim();
 
             if (content.isEmpty()) {
