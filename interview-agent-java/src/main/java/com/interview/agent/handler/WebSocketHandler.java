@@ -80,6 +80,11 @@ public class WebSocketHandler extends TextWebSocketHandler {
     private final Map<String, WSSession> runningInterviews = new ConcurrentHashMap<>();
 
     /**
+     * 每个 WebSocketSession 对应的发送锁，避免对方法参数直接 synchronized。
+     */
+    private final Map<String, Object> sessionSendLocks = new ConcurrentHashMap<>();
+
+    /**
      * 异步任务线程池（面试流程 / 题库上传）。面试节点会阻塞等待用户回答，必须与 WebSocket
      * 消息处理线程隔离，避免长任务占住连接线程。
      */
@@ -243,6 +248,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, @NotNull CloseStatus status) {
         sessions.remove(session.getId());
+        sessionSendLocks.remove(session.getId());
         log.info("[WS] 连接关闭 (sessionId={})", session.getId());
     }
 
@@ -258,6 +264,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
             ClientMsg msg = objectMapper.readValue(message.getPayload(), ClientMsg.class);
 
             switch (msg.getType() != null ? msg.getType() : "") {
+                case "ping" -> sendServerMsg(ws.conn, ServerMsg.builder().type("pong").build());
                 case "chat" -> handleChat(ws, msg);
                 case "start_interview" -> handleStartInterview(ws, msg);
                 case "answer" -> handleAnswer(ws, msg);
@@ -1283,7 +1290,8 @@ public class WebSocketHandler extends TextWebSocketHandler {
             if (session.isOpen()) {
                 String json = objectMapper.writeValueAsString(msg);
                 // 并行解析分段可能同时推送进度，WebSocketSession 本身不保证并发发送安全。
-                synchronized (session) {
+                Object lock = sessionSendLocks.computeIfAbsent(session.getId(), k -> new Object());
+                synchronized (lock) {
                     if (session.isOpen()) {
                         session.sendMessage(new TextMessage(json));
                     }
