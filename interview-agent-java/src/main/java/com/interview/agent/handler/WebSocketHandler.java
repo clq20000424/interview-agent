@@ -1105,7 +1105,8 @@ public class WebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 裁剪普通聊天上下文，只保留最近的消息，避免请求模型时上下文无限增长。
+     * 裁剪普通聊天上下文，只保留最近的消
+     * .息，避免请求模型时上下文无限增长。
      */
     private void trimChatHistory(WSSession ws) {
         int maxHistorySize = 20;

@@ -8,6 +8,7 @@ import com.interview.agent.loader.QuestionParser;
 import com.interview.agent.rag.BM25Manager;
 import com.interview.agent.rag.MilvusStore;
 import com.interview.agent.rag.RagDocument;
+import com.interview.agent.rag.RRFusion;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -296,9 +297,11 @@ public class EvalCommandRunner implements CommandLineRunner {
                 .embeddingModel(embeddingModel)
                 .vectorDim(MilvusStore.VECTOR_DIMENSION)
                 .vectorTopK(RetrievalEvaluator.RETRIEVE_TOP_K)
-                .bm25TopK(20)
+                .bm25TopK(bm25Manager.getTopK())
                 .bm25K1(1.5)
                 .bm25B(0.75)
+                .fusionType("rrf")
+                .rrfK(RRFusion.RRF_CONSTANT)
                 .rerankerType(rerankerType)
                 .rerankTopN(RetrievalEvaluator.RETRIEVE_TOP_K)
                 .note(note)

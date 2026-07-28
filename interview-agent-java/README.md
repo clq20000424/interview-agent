@@ -30,7 +30,7 @@ Agent 编排层（Spring AI Alibaba Graph / StateGraph，DAG 串联）
   ┌────────────────────┬────────────────────┬───────────────────┐
   │ RAG 多路召回         │ 记忆系统            │ Skill / 工具       │
   │ Milvus 向量 + BM25   │ 短期滑窗 + 长期画像  │ 4 个内置 Skill     │
-  │ 去重合并 + LLM 重排  │ Redis + MySQL       │ GitHub / 网页抓取  │
+  │ RRF 融合 + 模型重排   │ Redis + MySQL       │ GitHub / 网页抓取  │
   └────────────────────┴────────────────────┴───────────────────┘
       │
       ▼
@@ -46,7 +46,7 @@ Agent 编排层（Spring AI Alibaba Graph / StateGraph，DAG 串联）
 ## 核心特性
 
 - **多 Agent 协作**：7 个专职 Agent（聊天 + JD 分析 / 简历匹配 / 出题规划 / 面试官 / 评估 / 复习规划）通过 Spring AI Alibaba Graph 的 StateGraph 编排成有向图，由中心编排器按固定流程串联，流程确定、各 Agent 可独立调优。
-- **RAG 多路召回**：Milvus 向量检索（text-embedding-v3，1024 维，COSINE）+ 自研内存 BM25 关键词检索双路并行，结果按文档 ID 去重合并后交由 LLM 做**全量重排**取题；并实现 RRF（k=60）融合器作为备选方案。
+- **RAG 多路召回**：Milvus 向量检索（text-embedding-v3，1024 维，COSINE）+ 自研内存 BM25 关键词检索双路并行，使用 RRF（k=60）按两路排名融合去重，再交由 Cross-Encoder 或 LLM 做全量重排取题。
 - **RAG 离线评估**：基于人工标注数据集计算 Recall@K / MRR，支撑 TopK、分词等参数的 A/B 对比；另实现基于 LLM 的三维质量评估（忠实度 / 相关性 / 完整性）。
 - **动态难度调节**：出题阶段预生成按难度分档铺满的候选题池，面试时由阶段调度器按 basic → experience → design 三阶段从候选池自适应取题，连续答对升一档、连续答错降一档。
 - **Agent 记忆系统**：短期对话记忆（20 条滑动窗口）+ 长期用户画像与薄弱点追踪（得分 <60 记录 / ≥80 移除 / 30 天淘汰），Redis 缓存热数据 + MySQL 持久化，Cache-Aside 统一管理。
@@ -95,7 +95,7 @@ interview-agent-java/
 │   │   ├── BM25Retriever.java          #   BM25 内存倒排索引
 │   │   ├── BM25Manager.java            #   按用户管理 BM25 实例
 │   │   ├── Reranker.java               #   LLM 全量重排
-│   │   ├── RRFusion.java               #   RRF 融合器（备用）
+│   │   ├── RRFusion.java               #   RRF 多路召回融合器（主链路）
 │   │   └── eval/                       #   离线评估（Recall@K / MRR / 三维质量评估）
 │   ├── memory/                          # 记忆系统
 │   │   ├── ShortTermMemory.java        #   短期记忆（滑动窗口）

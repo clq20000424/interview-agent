@@ -16,6 +16,7 @@ import com.interview.agent.model.*;
 import com.interview.agent.rag.BM25Manager;
 import com.interview.agent.rag.MilvusStore;
 import com.interview.agent.rag.RagDocument;
+import com.interview.agent.rag.RRFusion;
 import com.interview.agent.rag.Reranker;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +70,7 @@ public class Orchestrator {
     private final LongTermMemory longTermMem;
     private final MilvusStore milvusStore;
     private final BM25Manager bm25Manager;
+    private final RRFusion rrfFusion;
     private final Reranker reranker;
     private final MySQLStore mysqlStore;
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -92,7 +94,7 @@ public class Orchestrator {
                         Evaluator evaluator, ReviewPlanner reviewPlanner,
                         ShortTermMemory shortTermMem, LongTermMemory longTermMem,
                         MilvusStore milvusStore, BM25Manager bm25Manager,
-                        Reranker reranker, MySQLStore mysqlStore) {
+                        RRFusion rrfFusion, Reranker reranker, MySQLStore mysqlStore) {
         this.jdAnalyzer = jdAnalyzer;
         this.resumeMatcher = resumeMatcher;
         this.questionPlanner = questionPlanner;
@@ -103,6 +105,7 @@ public class Orchestrator {
         this.longTermMem = longTermMem;
         this.milvusStore = milvusStore;
         this.bm25Manager = bm25Manager;
+        this.rrfFusion = rrfFusion;
         this.reranker = reranker;
         this.mysqlStore = mysqlStore;
     }
@@ -272,9 +275,6 @@ public class Orchestrator {
                         ? dir.getSearchQuery() : dir.getTopic();
                 log.info("[RAG] 方向 {} 检索: query={}", i + 1, query);
 
-                List<RagDocument> docs = new ArrayList<>();
-                Set<String> seen = new HashSet<>();
-
                 // Milvus 和 BM25 相互独立，使用专用线程池并行召回；单路失败或超时只影响自身结果。
                 long retrievalStart = System.nanoTime();
                 CompletableFuture<List<RagDocument>> milvusFuture = submitRagRetrieval(
@@ -290,10 +290,14 @@ public class Orchestrator {
                                 : bm25Manager.retrieve(userID, query));
 
                 CompletableFuture.allOf(milvusFuture, bm25Future).join();
-                addUniqueDocuments(docs, seen, milvusFuture.join());
-                addUniqueDocuments(docs, seen, bm25Future.join());
-                log.info("[RAG] 方向 {} 双路召回完成: milvus={}, bm25={}, merged={}, elapsedMs={}",
-                        i + 1, milvusFuture.join().size(), bm25Future.join().size(), docs.size(),
+                List<RagDocument> milvusResults = milvusFuture.join();
+                List<RagDocument> bm25Results = bm25Future.join();
+                int fusionTopK = milvusResults.size() + bm25Results.size();
+                List<RagDocument> docs = rrfFusion.fuse(
+                        List.of(milvusResults, bm25Results), fusionTopK);
+                log.info("[RAG] 方向 {} 双路召回及 RRF 融合完成: milvus={}, bm25={}, fused={}, rrfK={}, elapsedMs={}",
+                        i + 1, milvusResults.size(), bm25Results.size(), docs.size(),
+                        RRFusion.RRF_CONSTANT,
                         TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - retrievalStart));
 
                 if (!docs.isEmpty()) {
@@ -765,22 +769,6 @@ public class Orchestrator {
                                 documents.size(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
                     }
                 });
-    }
-
-    /**
-     * 按召回来源顺序合并结果并去重，保持 Milvus 优先、BM25 补充的原有排序语义。
-     */
-    private static void addUniqueDocuments(List<RagDocument> documents,
-                                           Set<String> seen,
-                                           List<RagDocument> candidates) {
-        if (candidates == null) {
-            return;
-        }
-        for (RagDocument candidate : candidates) {
-            if (candidate != null && seen.add(candidate.getId())) {
-                documents.add(candidate);
-            }
-        }
     }
 
     /**
