@@ -78,6 +78,8 @@ public final class EvalReportRenderer {
             if (c.getBm25TopK() > 0) b.append(String.format("| BM25TopK | %d |%n", c.getBm25TopK()));
             if (c.getBm25K1() > 0) b.append(String.format("| BM25 k1 | %.2f |%n", c.getBm25K1()));
             if (c.getBm25B() > 0) b.append(String.format("| BM25 b | %.2f |%n", c.getBm25B()));
+            if (notBlank(c.getFusionType())) b.append(String.format("| FusionType | %s |%n", c.getFusionType()));
+            if (c.getRrfK() > 0) b.append(String.format("| RRF k | %d |%n", c.getRrfK()));
             if (notBlank(c.getRerankerType())) b.append(String.format("| RerankerType | %s |%n", c.getRerankerType()));
             if (c.getRerankTopN() > 0) b.append(String.format("| RerankTopN | %d |%n", c.getRerankTopN()));
             if (notBlank(c.getNote())) b.append(String.format("| Note | %s |%n", c.getNote()));

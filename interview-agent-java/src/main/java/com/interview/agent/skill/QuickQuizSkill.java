@@ -5,13 +5,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.agent.agent.AgentUtils;
 import com.interview.agent.rag.BM25Manager;
 import com.interview.agent.rag.MilvusStore;
+import com.interview.agent.rag.RRFusion;
 import com.interview.agent.rag.RagDocument;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,11 +49,14 @@ public class QuickQuizSkill implements Skill {
     private final ChatModel chatModel;
     private final MilvusStore milvusStore;
     private final BM25Manager bm25Manager;
+    private final RRFusion rrfFusion;
 
-    public QuickQuizSkill(ChatModel chatModel, MilvusStore milvusStore, BM25Manager bm25Manager) {
+    public QuickQuizSkill(ChatModel chatModel, MilvusStore milvusStore,
+                          BM25Manager bm25Manager, RRFusion rrfFusion) {
         this.chatModel = chatModel;
         this.milvusStore = milvusStore;
         this.bm25Manager = bm25Manager;
+        this.rrfFusion = rrfFusion;
     }
 
     @Override
@@ -228,36 +235,43 @@ public class QuickQuizSkill implements Skill {
                 .build();
     }
 
+    /**
+     * 从 Milvus 与 BM25 独立召回候选题，经 RRF 融合后转换为指定数量的测验题。
+     * 任一路异常只降级该路，避免影响另一检索后端和 LLM 补题流程。
+     */
     private List<Map<String, Object>> retrieveQuestions(String userId, String topic, int count) {
         List<Map<String, Object>> questions = new ArrayList<>();
-        try {
-            String uid = (userId == null || userId.isEmpty()) ? "default_user" : userId;
-            Set<String> seen = new HashSet<>();
+        String uid = (userId == null || userId.isEmpty()) ? "default_user" : userId;
+        List<RagDocument> milvusResults = List.of();
+        List<RagDocument> bm25Results = List.of();
 
-            if (milvusStore != null) {
-                List<RagDocument> docs = milvusStore.retrieveByUser(uid, topic, count * 2);
-                for (RagDocument doc : docs) {
-                    if (questions.size() >= count) break;
-                    if (seen.contains(doc.getId())) continue;
-                    seen.add(doc.getId());
-                    Map<String, Object> q = toQuizQuestion(doc);
-                    if (q != null) questions.add(q);
-                }
+        if (milvusStore != null) {
+            try {
+                List<RagDocument> retrieved = milvusStore.retrieveByUser(uid, topic, count * 2);
+                milvusResults = retrieved == null ? List.of() : retrieved;
+            } catch (Exception e) {
+                log.warn("[QuickQuiz] Milvus 检索题目失败: {}", e.getMessage());
             }
-
-            if (questions.size() < count && bm25Manager != null) {
-                List<RagDocument> bm25Docs = bm25Manager.retrieve(uid, topic);
-                for (RagDocument doc : bm25Docs) {
-                    if (questions.size() >= count) break;
-                    if (seen.contains(doc.getId())) continue;
-                    seen.add(doc.getId());
-                    Map<String, Object> q = toQuizQuestion(doc);
-                    if (q != null) questions.add(q);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("[QuickQuiz] 检索题目失败: {}", e.getMessage());
         }
+
+        if (bm25Manager != null) {
+            try {
+                List<RagDocument> retrieved = bm25Manager.retrieve(uid, topic);
+                bm25Results = retrieved == null ? List.of() : retrieved;
+            } catch (Exception e) {
+                log.warn("[QuickQuiz] BM25 检索题目失败: {}", e.getMessage());
+            }
+        }
+
+        List<RagDocument> fused = rrfFusion.fuse(List.of(milvusResults, bm25Results), count);
+        for (RagDocument doc : fused) {
+            Map<String, Object> question = toQuizQuestion(doc);
+            if (question != null) {
+                questions.add(question);
+            }
+        }
+        log.debug("[QuickQuiz] RRF 融合完成: milvus={}, bm25={}, selected={}, rrfK={}",
+                milvusResults.size(), bm25Results.size(), questions.size(), RRFusion.RRF_CONSTANT);
         return questions;
     }
 

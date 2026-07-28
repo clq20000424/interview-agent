@@ -3,7 +3,7 @@ package com.interview.agent.rag;
 import java.util.List;
 
 /**
- * Rerank 重排策略。多路召回去重合并后，对候选文档按与 query 的相关性重排。
+ * Rerank 重排策略。多路召回经 RRF 融合后，对候选文档按与 query 的相关性重排。
  * 三种实现可通过配置 app.rag.reranker.type 切换：
  * - llm           ：用大模型（chatModel）做语义重排（默认）
  * - cross-encoder ：用 DashScope gte-rerank 专用重排模型（cross-encoder）

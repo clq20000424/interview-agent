@@ -9,6 +9,7 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
+    allowedHosts: ['.cpolar.top'],
     proxy: {
       '/api': {
         target: 'http://localhost:9090',

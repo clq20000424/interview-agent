@@ -26,6 +26,13 @@ public class BM25Manager {
     }
 
     /**
+     * 返回当前 BM25 每次检索的最大结果数，供评估配置快照记录真实参数。
+     */
+    public int getTopK() {
+        return topK;
+    }
+
+    /**
      * 覆盖指定用户的题库索引
      */
     public void replaceDocuments(String userID, List<RagDocument> docs) {

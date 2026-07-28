@@ -59,6 +59,18 @@ public class RagConfigSnapshot {
     private double bm25B;
 
     /**
+     * 多路召回融合策略，当前为 rrf。
+     */
+    @JsonProperty("fusion_type")
+    private String fusionType;
+
+    /**
+     * RRF 公式中的平滑常数 k。
+     */
+    @JsonProperty("rrf_k")
+    private int rrfK;
+
+    /**
      * "llm" / "gte-rerank" / "none"
      */
     @JsonProperty("reranker_type")

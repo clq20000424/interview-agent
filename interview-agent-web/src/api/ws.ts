@@ -10,7 +10,15 @@ export class WSClient {
   private onMessage: (msg: ServerMessage) => void
   private onStatusChange: (connected: boolean) => void
   private reconnectTimer: number | null = null
+  private heartbeatTimer: number | null = null
+  private pongTimeoutTimer: number | null = null
+  private awaitingPong = false
   private token: string | null = null
+
+  /** 心跳间隔（毫秒） */
+  private static readonly HEARTBEAT_INTERVAL = 30_000
+  /** ping 发出后等待 pong 的最长时间（毫秒） */
+  private static readonly PONG_TIMEOUT = 10_000
 
   constructor(
     onMessage: (msg: ServerMessage) => void,
@@ -35,10 +43,17 @@ export class WSClient {
         clearTimeout(this.reconnectTimer)
         this.reconnectTimer = null
       }
+      this.startHeartbeat()
     }
 
     this.ws.onmessage = (event) => {
       const msg: ServerMessage = JSON.parse(event.data)
+
+      // pong 仅用于确认连接健康，不进入业务消息和界面渲染流程。
+      if (msg.type === 'pong') {
+        this.handlePong()
+        return
+      }
       
       // 检查是否是认证错误消息
       if (msg.type === 'error' && msg.message && 
@@ -53,6 +68,7 @@ export class WSClient {
 
     this.ws.onclose = (event) => {
       this.onStatusChange(false)
+      this.stopHeartbeat()
       
       // 检查关闭原因，如果是认证问题（code 1008 POLICY_VIOLATION），不重连
       // 1008 表示策略违规，我们在后端用于token过期/无效的情况
@@ -91,10 +107,72 @@ export class WSClient {
     }
   }
 
+  /**
+   * 启动心跳：定时发送 ping，既防止代理层空闲断开，也检测半开连接。
+   */
+  private startHeartbeat() {
+    this.stopHeartbeat()
+    this.heartbeatTimer = window.setInterval(
+      () => this.sendHeartbeat(),
+      WSClient.HEARTBEAT_INTERVAL,
+    )
+  }
+
+  /**
+   * 发送一次 ping 并启动 pong 超时检测；超时后主动关闭连接，由现有逻辑重新连接。
+   */
+  private sendHeartbeat() {
+    const socket = this.ws
+    if (!socket || socket.readyState !== WebSocket.OPEN || this.awaitingPong) {
+      return
+    }
+
+    this.awaitingPong = true
+    socket.send(JSON.stringify({ type: 'ping' }))
+    this.pongTimeoutTimer = window.setTimeout(() => {
+      if (!this.awaitingPong || this.ws !== socket) {
+        return
+      }
+      console.warn('[WS] pong 响应超时，关闭连接并准备重连')
+      socket.close(4000, 'pong_timeout')
+    }, WSClient.PONG_TIMEOUT)
+  }
+
+  /**
+   * 收到 pong 后确认本轮心跳成功，并取消对应的超时任务。
+   */
+  private handlePong() {
+    this.awaitingPong = false
+    if (this.pongTimeoutTimer) {
+      clearTimeout(this.pongTimeoutTimer)
+      this.pongTimeoutTimer = null
+    }
+  }
+
+  /**
+   * 停止心跳并清理等待中的 pong 超时状态。
+   */
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+    if (this.pongTimeoutTimer) {
+      clearTimeout(this.pongTimeoutTimer)
+      this.pongTimeoutTimer = null
+    }
+    this.awaitingPong = false
+  }
+
+  /**
+   * 主动断开连接，同时取消心跳和待执行的自动重连。
+   */
   disconnect() {
     this.token = null
+    this.stopHeartbeat()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
     }
     this.ws?.close()
   }

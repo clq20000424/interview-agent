@@ -12,6 +12,7 @@ export type ClientMessage =
     | { type: 'quit_interview'; sessionId?: string }
     | { type: 'upload_file'; filename: string; data: string }
     | { type: 'upload_questions'; filename: string; data: string }
+    | { type: 'ping' }
 
 // RAG 题库诊断结果
 export interface SkillCoverage {
@@ -50,6 +51,7 @@ export type ServerMessage =
     | { type: 'interview_complete' }
     | { type: 'session_started'; content: string }
     | { type: 'resume_match_result'; content: string }
+    | { type: 'pong' }
 
 // UI 展示用的消息
 export interface ChatMessage {
