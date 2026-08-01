@@ -12,9 +12,11 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author 陈龙强
@@ -64,7 +66,8 @@ public class ResumeMatcher {
         String jdSummary = formatJDForMatching(jdAnalysis);
         String resumeText = formatResumeForMatching(resume);
 
-        String userMsg = String.format("## 岗位 JD 分析结果\n%s\n\n## 候选人简历\n%s", jdSummary, resumeText);
+        PromptTemplate userMsgTemplate = new PromptTemplate("## 岗位 JD 分析结果\n{jd}\n\n## 候选人简历\n{resume}");
+        String userMsg = userMsgTemplate.render(Map.of("jd", jdSummary, "resume", resumeText));
 
         Prompt prompt = new Prompt(List.of(
                 new SystemMessage(RESUME_MATCHER_PROMPT),
