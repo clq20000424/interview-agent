@@ -12,10 +12,12 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author 陈龙强
@@ -28,7 +30,7 @@ public class Interviewer {
     private final ChatModel chatModel;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final String INTERVIEWER_SYSTEM_PROMPT = """
+    private static final PromptTemplate INTERVIEWER_SYSTEM_TEMPLATE = new PromptTemplate("""
             你是一位资深的技术面试官，风格专业但友善。你正在进行一场技术面试。
             
             面试规则：
@@ -39,17 +41,17 @@ public class Interviewer {
             5. 不要直接告诉候选人答案
             
             当前面试上下文：
-            - 岗位：%s
-            - 当前第 %d/%d 题
-            - 当前难度：%s
-            %s""";
+            - 岗位：{position}
+            - 当前第 {currentQuestion}/{totalQuestions} 题
+            - 当前难度：{currentDifficulty}
+            {profileContext}""");
 
-    private static final String SCORE_PROMPT = """
+    private static final PromptTemplate SCORE_TEMPLATE = new PromptTemplate("""
             请对候选人的回答进行客观评分和反馈。
             
-            题目：%s
-            候选人回答：%s
-            参考答案要点：%s
+            题目：{question}
+            候选人回答：{answer}
+            参考答案要点：{reference}
             
             【核心原则】严格基于候选人实际回答的内容进行评分：
             - 只认定候选人明确表述出来的知识点，不要推测、脑补、或替候选人补充任何内容
@@ -74,23 +76,23 @@ public class Interviewer {
             - 70-89：良好回答，覆盖主要要点
             - 50-69：基本回答，有明显遗漏
             - 30-49：较差回答，只覆盖少量要点
-            - 0-29：未能回答或完全偏题""";
+            - 0-29：未能回答或完全偏题""");
 
-    private static final String UPDATE_PROFILE_PROMPT = """
+    private static final PromptTemplate UPDATE_PROFILE_TEMPLATE = new PromptTemplate("""
             请基于以下信息更新候选人画像。要求：简洁、结构化、不超过200字。
             
-            %s
+            {prevProfile}
             
             本轮新信息：
-            - 第 %d 题，考察技能：%s
-            - 得分：%.0f/100
-            - 命中要点：%s
-            - 遗漏要点：%s
+            - 第 {questionNum} 题，考察技能：{skills}
+            - 得分：{score}/100
+            - 命中要点：{hit}
+            - 遗漏要点：{missed}
             
             请输出更新后的完整画像（纯文本，不要 JSON）。画像应包含：
             1. 技能强项（哪些领域表现好）
             2. 薄弱领域（哪些方面需加强）
-            3. 答题风格特征（如：偏理论/偏实践、善于举例/偏抽象等）""";
+            3. 答题风格特征（如：偏理论/偏实践、善于举例/偏抽象等）""");
 
     /**
      * 面试官提问（非流式）
@@ -102,21 +104,21 @@ public class Interviewer {
             profileContext = "\n候选人画像：\n" + state.getCandidateProfile();
         }
 
-        String systemPrompt = String.format(INTERVIEWER_SYSTEM_PROMPT,
-                position,
-                state.getCurrentQuestion(),
-                state.getTotalQuestions(),
-                state.getCurrentDifficulty(),
-                profileContext);
+        String systemMsg = INTERVIEWER_SYSTEM_TEMPLATE.render(Map.of(
+                "position", position,
+                "currentQuestion", state.getCurrentQuestion(),
+                "totalQuestions", state.getTotalQuestions(),
+                "currentDifficulty", state.getCurrentDifficulty(),
+                "profileContext", profileContext));
 
         List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(systemPrompt));
+        messages.add(new SystemMessage(systemMsg));
         // 也不再塞入历史问答（每题独立、干净地提出），避免模型被上下文诱导加承接语。
         // （之前的「可以适当改写使其更自然」会让模型加上「好的，我们进入下一个问题」「（稍作停顿）」
         //   等大量啰嗦的承接语和铺垫，既不像题库原题，也会让第一题看起来像在承接上一题。）
-        String questionMsg = String.format(
-                "请以面试官的身份直接提出以下面试题，保持简洁，不要加额外的铺垫、背景说明或解释：\n\n%s",
-                question.getContent());
+        PromptTemplate questionTemplate = new PromptTemplate(
+                "请以面试官的身份直接提出以下面试题，保持简洁，不要加额外的铺垫、背景说明或解释：\n\n{question}");
+        String questionMsg = questionTemplate.render(Map.of("question", question.getContent()));
         messages.add(new UserMessage(questionMsg));
 
         ChatResponse response = chatModel.call(new Prompt(messages));
@@ -128,7 +130,10 @@ public class Interviewer {
      */
     public AnswerScore scoreAnswer(PlannedQuestion question, String answer) {
         String reference = question.getReference() != null ? question.getReference() : "无参考答案";
-        String userMsg = String.format(SCORE_PROMPT, question.getContent(), answer, reference);
+        String userMsg = SCORE_TEMPLATE.render(Map.of(
+                "question", question.getContent(),
+                "answer", answer,
+                "reference", reference));
 
         Prompt prompt = new Prompt(List.of(
                 new SystemMessage("你是一个严格客观的技术面试评分专家。"),
@@ -166,9 +171,13 @@ public class Interviewer {
         String hit = score.getKeyPointsHit() != null ? String.join(", ", score.getKeyPointsHit()) : "无";
         String missed = score.getKeyPointsMissed() != null ? String.join(", ", score.getKeyPointsMissed()) : "无";
 
-        String userMsg = String.format(UPDATE_PROFILE_PROMPT,
-                prevProfile, questionNum, skills, score.getScore(), hit, missed);
-
+        String userMsg = UPDATE_PROFILE_TEMPLATE.render(Map.of(
+                "prevProfile", prevProfile,
+                "questionNum", questionNum,
+                "skills", skills,
+                "score", score.getScore(),
+                "hit", hit,
+                "missed", missed));
         Prompt prompt = new Prompt(List.of(new UserMessage(userMsg)));
         ChatResponse response = chatModel.call(prompt);
         return response.getResult().getOutput().getText();
@@ -179,26 +188,27 @@ public class Interviewer {
      */
     public String followUp(InterviewState state, PlannedQuestion question,
                            String answer, String feedback, List<String> missedPoints, String position) {
-        String systemPrompt = String.format("""
-                        你是一位资深的技术面试官，正在对候选人的回答进行追问。
-                        岗位：%s，当前第 %d/%d 题。
-                        
-                        原题：%s
-                        候选人回答：%s
-                        评分反馈：%s
-                        遗漏知识点：%s
-                        
-                        请针对候选人遗漏的知识点，提出一个引导性的追问，帮助候选人展示更多能力。
-                        要求：只输出追问内容，不要输出其他解释。""",
-                position,
-                state.getCurrentQuestion(),
-                state.getTotalQuestions(),
-                question.getContent(),
-                answer,
-                feedback,
-                String.join(", ", missedPoints != null ? missedPoints : List.of()));
+        PromptTemplate followUpTemplate = new PromptTemplate("""
+                你是一位资深的技术面试官，正在对候选人的回答进行追问。
+                岗位：{position}，当前第 {currentQuestion}/{totalQuestions} 题。
+                
+                原题：{question}
+                候选人回答：{answer}
+                评分反馈：{feedback}
+                遗漏知识点：{missedPoints}
+                
+                请针对候选人遗漏的知识点，提出一个引导性的追问，帮助候选人展示更多能力。
+                要求：只输出追问内容，不要输出其他解释。""");
 
-        Prompt prompt = new Prompt(List.of(new UserMessage(systemPrompt)));
+        String userMsg = followUpTemplate.render(Map.of(
+                "position", position,
+                "currentQuestion", state.getCurrentQuestion(),
+                "totalQuestions", state.getTotalQuestions(),
+                "question", question.getContent(),
+                "answer", answer,
+                "feedback", feedback,
+                "missedPoints", String.join(", ", missedPoints != null ? missedPoints : List.of())));
+        Prompt prompt = new Prompt(List.of(new UserMessage(userMsg)));
         ChatResponse response = chatModel.call(prompt);
         return response.getResult().getOutput().getText();
     }
