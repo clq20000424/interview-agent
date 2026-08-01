@@ -137,9 +137,9 @@ public class Interviewer {
 
         ChatResponse response = chatModel.call(prompt);
         String content = response.getResult().getOutput().getText();
-        String json = AgentUtils.extractJSON(content);
 
         try {
+            String json = AgentUtils.extractJSON(content);
             return objectMapper.readValue(json, AnswerScore.class);
         } catch (Exception e) {
             log.error("[Interviewer] 评分解析失败: {}", e.getMessage());

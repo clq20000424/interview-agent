@@ -73,9 +73,9 @@ public class ResumeMatcher {
 
         ChatResponse response = chatModel.call(prompt);
         String content = response.getResult().getOutput().getText();
-        String json = AgentUtils.extractJSON(content);
 
         try {
+            String json = AgentUtils.extractJSON(content);
             ResumeMatchResult result = objectMapper.readValue(json, ResumeMatchResult.class);
             log.info("[ResumeMatcher] 匹配完成，综合得分: {}", result.getOverallScore());
             return result;

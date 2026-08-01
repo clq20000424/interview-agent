@@ -98,9 +98,9 @@ public class Evaluator {
 
         ChatResponse response = chatModel.call(prompt);
         String content = response.getResult().getOutput().getText();
-        String json = AgentUtils.extractJSON(content);
 
         try {
+            String json = AgentUtils.extractJSON(content);
             EvaluationReport report = objectMapper.readValue(json, EvaluationReport.class);
             report.setSessionId(state.getSessionId());
             report.setCandidateName(candidateName);

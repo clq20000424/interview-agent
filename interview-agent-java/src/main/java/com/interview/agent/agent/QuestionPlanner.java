@@ -142,9 +142,9 @@ public class QuestionPlanner {
 
         ChatResponse response = chatModel.call(prompt);
         String content = response.getResult().getOutput().getText();
-        String json = AgentUtils.extractJSON(content);
 
         try {
+            String json = AgentUtils.extractJSON(content);
             QuestionDirectionPlan plan = objectMapper.readValue(json, QuestionDirectionPlan.class);
             log.info("[QuestionPlanner] Phase 1 完成，规划了 {} 个出题方向", plan.getDirections().size());
             return plan;
@@ -191,9 +191,9 @@ public class QuestionPlanner {
 
         ChatResponse response = chatModel.call(prompt);
         String content = response.getResult().getOutput().getText();
-        String json = AgentUtils.extractJSON(content);
 
         try {
+            String json = AgentUtils.extractJSON(content);
             QuestionPlan plan = objectMapper.readValue(json, QuestionPlan.class);
             log.info("[QuestionPlanner] Phase 2 完成，共 {} 道题", plan.getQuestions().size());
             return plan;

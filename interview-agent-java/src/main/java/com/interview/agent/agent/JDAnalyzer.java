@@ -59,9 +59,9 @@ public class JDAnalyzer {
 
         ChatResponse response = chatModel.call(prompt);
         String content = response.getResult().getOutput().getText();
-        String json = AgentUtils.extractJSON(content);
 
         try {
+            String json = AgentUtils.extractJSON(content);
             JDAnalysis analysis = objectMapper.readValue(json, JDAnalysis.class);
             analysis.setRawJD(jdText);
             log.info("[JDAnalyzer] 分析完成: {} - {}", analysis.getPosition(), analysis.getExperienceLevel());
