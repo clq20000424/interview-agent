@@ -186,8 +186,8 @@ public class ReviewPlanner {
      * 包级可见，便于单元测试覆盖「LLM 漏字段」场景。
      */
     ReviewPlan parsePlan(String content, String sessionId) {
-        String json = AgentUtils.extractJSON(content);
         try {
+            String json = AgentUtils.extractJSON(content);
             ReviewPlan plan = objectMapper.readValue(json, ReviewPlan.class);
             plan.setSessionId(sessionId);
             plan.setCreatedAt(LocalDateTime.now());
