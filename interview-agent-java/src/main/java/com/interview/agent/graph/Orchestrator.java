@@ -281,7 +281,7 @@ public class Orchestrator {
                         "Milvus", i + 1,
                         () -> milvusStore == null
                                 ? Collections.emptyList()
-                                : milvusStore.retrieveByUser(userID, query, 10));
+                                : milvusStore.retrieveByUser(userID, query, 20));
 
                 CompletableFuture<List<RagDocument>> bm25Future = submitRagRetrieval(
                         "BM25", i + 1,
@@ -292,9 +292,8 @@ public class Orchestrator {
                 CompletableFuture.allOf(milvusFuture, bm25Future).join();
                 List<RagDocument> milvusResults = milvusFuture.join();
                 List<RagDocument> bm25Results = bm25Future.join();
-                int fusionTopK = milvusResults.size() + bm25Results.size();
                 List<RagDocument> docs = rrfFusion.fuse(
-                        List.of(milvusResults, bm25Results), fusionTopK);
+                        List.of(milvusResults, bm25Results), 10);
                 log.info("[RAG] 方向 {} 双路召回及 RRF 融合完成: milvus={}, bm25={}, fused={}, rrfK={}, elapsedMs={}",
                         i + 1, milvusResults.size(), bm25Results.size(), docs.size(),
                         RRFusion.RRF_CONSTANT,

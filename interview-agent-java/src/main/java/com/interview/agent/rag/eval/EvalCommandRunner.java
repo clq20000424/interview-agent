@@ -251,7 +251,7 @@ public class EvalCommandRunner implements CommandLineRunner {
                         .relevantDocIds(findRelatedEntries(entry, group))
                         .topic(displayName)
                         .difficulty(difficulty)
-                        .note("自动生成，种子题: " + entry.getId())
+                        .note("自动生成弱标注，种子题及同技能近邻题: " + entry.getId())
                         .build());
                 count++;
             }
@@ -380,42 +380,55 @@ public class EvalCommandRunner implements CommandLineRunner {
     }
 
     /**
-     * 找出和种子题相关的文档 ID：种子题本身 + 同 topic 中 skill 重叠 ≥2 的题目（最多 2 个）。
+     * 找出和种子题相关的文档 ID：种子题本身 + 同 topic 且至少共享 1 个技能的近邻题。
+     * <p>
+     * 这是自动生成的弱标注：共享技能只能说明候选题可能相关，因此最多补充 2 道，
+     * 生成数据集后仍建议人工审核 relevant_doc_ids。
      */
     static List<String> findRelatedEntries(ManifestEntry seed, List<ManifestEntry> group) {
+        if (seed == null || seed.getId() == null || seed.getId().isBlank()) {
+            return List.of();
+        }
+
         List<String> result = new ArrayList<>();
         result.add(seed.getId());
-
-        if (seed.getSkills() == null || seed.getSkills().size() < 2) {
+        if (seed.getSkills() == null || seed.getSkills().isEmpty() || group == null) {
             return result;
         }
 
-        Set<String> seedSkills = seed.getSkills().stream()
-                .map(s -> s.trim().toLowerCase())
-                .collect(Collectors.toSet());
-
+        Set<String> seedSkills = normalizeSkills(seed.getSkills());
         record Candidate(String id, int overlap) {
         }
+
         List<Candidate> candidates = new ArrayList<>();
-        for (ManifestEntry e : group) {
-            if (e.getId().equals(seed.getId()) || e.getSkills() == null) {
+        for (ManifestEntry entry : group) {
+            if (entry == null || Objects.equals(entry.getId(), seed.getId())
+                    || entry.getSkills() == null || entry.getSkills().isEmpty()) {
                 continue;
             }
-            int overlap = 0;
-            for (String s : e.getSkills()) {
-                if (seedSkills.contains(s.trim().toLowerCase())) {
-                    overlap++;
-                }
-            }
-            if (overlap >= 2) {
-                candidates.add(new Candidate(e.getId(), overlap));
+
+            Set<String> candidateSkills = normalizeSkills(entry.getSkills());
+            int overlap = (int) candidateSkills.stream().filter(seedSkills::contains).count();
+            if (overlap >= 1) {
+                candidates.add(new Candidate(entry.getId(), overlap));
             }
         }
-        candidates.sort((a, b) -> Integer.compare(b.overlap(), a.overlap()));
+
+        candidates.sort(Comparator
+                .comparingInt(Candidate::overlap).reversed()
+                .thenComparing(Candidate::id));
         for (int i = 0; i < Math.min(2, candidates.size()); i++) {
             result.add(candidates.get(i).id());
         }
         return result;
+    }
+
+    private static Set<String> normalizeSkills(List<String> skills) {
+        return skills.stream()
+                .filter(Objects::nonNull)
+                .map(s -> s.trim().toLowerCase(Locale.ROOT))
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toSet());
     }
 
     /**
