@@ -50,6 +50,14 @@ public class BM25Manager {
     }
 
     /**
+     * 覆盖指定用户某个来源文件的题库索引
+     */
+    public void replaceSourceFileDocuments(String userID, String sourceFile, List<RagDocument> docs) {
+        BM25Retriever r = retrievers.computeIfAbsent(userID, k -> new BM25Retriever(topK));
+        r.replaceSourceFileDocuments(sourceFile, docs);
+    }
+
+    /**
      * 检索指定用户的题库
      */
     public List<RagDocument> retrieve(String userID, String query) {

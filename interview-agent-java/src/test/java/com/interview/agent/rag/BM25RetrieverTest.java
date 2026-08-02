@@ -46,4 +46,34 @@ class BM25RetrieverTest {
         assertTrue(BM25Retriever.tokenize(null).isEmpty());
         assertTrue(BM25Retriever.tokenize("  ").isEmpty());
     }
+
+    @Test
+    void replacesDocumentsFromSameSourceFile() {
+        BM25Retriever retriever = new BM25Retriever(10);
+        RagDocument oldRedis = RagDocument.builder()
+                .id("old-redis")
+                .content("redis stale lock")
+                .sourceFile("bank.md")
+                .build();
+        RagDocument mysql = RagDocument.builder()
+                .id("mysql")
+                .content("mysql btree index")
+                .sourceFile("mysql.md")
+                .build();
+        retriever.indexDocuments(List.of(oldRedis, mysql));
+
+        RagDocument newRedis = RagDocument.builder()
+                .id("new-redis")
+                .content("redis fresh stream")
+                .sourceFile("bank.md")
+                .build();
+        retriever.replaceSourceFileDocuments("bank.md", List.of(newRedis));
+
+        List<String> redisResultIds = retriever.retrieve("redis").stream()
+                .map(RagDocument::getId)
+                .toList();
+        assertTrue(redisResultIds.contains("new-redis"));
+        assertTrue(!redisResultIds.contains("old-redis"));
+        assertEquals("mysql", retriever.retrieve("mysql").getFirst().getId());
+    }
 }
