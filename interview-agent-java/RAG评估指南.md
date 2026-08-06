@@ -102,7 +102,7 @@ docker-compose up -d
 将 Markdown 格式的面试题库写入 Milvus 向量库，并导出 manifest 清单文件。
 
 ```bash
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --prepare"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --prepare"
 ```
 
 **执行流程：**
@@ -132,7 +132,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments="eval --prepare"
 
 ```bash
 # 指定题库目录和 manifest 输出路径
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --prepare --questions data/my_questions --manifest data/eval/my_manifest.json"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --prepare --questions data/my_questions --manifest data/eval/my_manifest.json"
 ```
 
 ### 4.3 Step 2：生成评估数据集（--gen-dataset）
@@ -140,7 +140,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments="eval --prepare --questions data
 基于 manifest 自动生成评估样本集。
 
 ```bash
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --gen-dataset"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --gen-dataset"
 ```
 
 **执行流程：**
@@ -154,7 +154,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments="eval --gen-dataset"
 **自定义样本数量：**
 
 ```bash
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --gen-dataset --sample-count 100"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --gen-dataset --sample-count 100"
 ```
 
 **数据集样本格式：**
@@ -173,7 +173,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments="eval --gen-dataset --sample-cou
 ### 4.4 Step 3：执行评估（默认模式）
 
 ```bash
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --note baseline"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --note baseline"
 ```
 
 **执行流程：**
@@ -201,7 +201,7 @@ Markdown 报告: data/eval/reports/eval_report_20260614_151045.md
 ### 4.5 跳过 Reranker 对比
 
 ```bash
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --note no-rerank --skip-rerank"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --note no-rerank --skip-rerank"
 ```
 
 这会跳过 Rerank 阶段，让你对比"有 Reranker vs 无 Reranker"的效果差异。
@@ -218,7 +218,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments="eval --note no-rerank --skip-re
 |--------|------|------|
 | Baseline | `eval --note baseline` | 默认配置 |
 | 无 Rerank | `eval --note no-rerank --skip-rerank` | 关闭 Reranker |
-| 调 TopK | 设置环境变量 `EVAL_RETRIEVE_TOP_K=30` | 增大召回量 |
+| 调整检索策略 | 修改线上与评估共用的 RAG 检索常量 | 保持评估链路与线上链路一致 |
 | 换 Embedding | 修改 `application.yml` 中的 embedding model | 换嵌入模型 |
 
 ### 5.2 配置快照
@@ -229,12 +229,12 @@ mvn spring-boot:run -Dspring-boot.run.arguments="eval --note no-rerank --skip-re
 {
   "embedding_model": "text-embedding-v3",
   "vector_dim": 1024,
-  "vector_top_k": 20,
-  "bm25_top_k": 20,
+  "vector_top_k": 10,
+  "bm25_top_k": 10,
   "bm25_k1": 1.5,
   "bm25_b": 0.75,
   "reranker_type": "cross-encoder",
-  "rerank_top_n": 20,
+  "rerank_top_n": 10,
   "note": "baseline"
 }
 ```
@@ -330,9 +330,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments="eval --note no-rerank --skip-re
 
 **环境变量：**
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `EVAL_RETRIEVE_TOP_K` | 20 | 评估时 Milvus + Rerank 的 TopK |
+当前评估不再单独使用 `EVAL_RETRIEVE_TOP_K`。Milvus 每路召回数量和 Reranker 返回数量统一使用线上共享的 Top10 配置，避免评估链路与线上链路不一致。
 
 ---
 
@@ -375,16 +373,16 @@ mvn spring-boot:run -Dspring-boot.run.arguments="eval --note no-rerank --skip-re
 make infra-up
 
 # 1. 解析题库 → 写入向量库
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --prepare"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --prepare"
 
 # 2. 生成评估数据集
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --gen-dataset"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --gen-dataset"
 
 # 3. 跑一次 baseline
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --note baseline"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --note baseline"
 
 # 4. 对比：跳过 Reranker
-mvn spring-boot:run -Dspring-boot.run.arguments="eval --note no-rerank --skip-rerank"
+mvn spring-boot:run "-Dspring-boot.run.arguments=eval --note no-rerank --skip-rerank"
 
 # 5. 查看报告
 # data/eval/reports/eval_report_*.md

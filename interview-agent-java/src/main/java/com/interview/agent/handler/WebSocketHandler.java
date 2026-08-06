@@ -708,9 +708,19 @@ public class WebSocketHandler extends TextWebSocketHandler {
                         .map(q -> RagDocument.builder()
                                 .id(q.getId())
                                 .content(q.getContent() + "\n参考答案：" + q.getReference())
+                                .metadata(new HashMap<>(Map.of(
+                                        "type", q.getType(),
+                                        "difficulty", q.getDifficulty(),
+                                        "skills", q.getSkills(),
+                                        "reference", q.getReference(),
+                                        "user_id", ws.userID,
+                                        "source_file", filename
+                                )))
+                                .userId(ws.userID)
+                                .sourceFile(filename)
                                 .build())
                         .toList();
-                bm25Manager.appendDocuments(ws.userID, bm25Docs);
+                bm25Manager.replaceSourceFileDocuments(ws.userID, filename, bm25Docs);
 
                 // 保存文件 hash
                 redisStore.saveFileHash(ws.userID, filename, hash);

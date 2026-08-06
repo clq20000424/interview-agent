@@ -44,7 +44,7 @@ public class BM25Retriever {
     /**
      * 构建 BM25 倒排索引
      */
-    public void indexDocuments(List<RagDocument> docs) {
+    public synchronized void indexDocuments(List<RagDocument> docs) {
         this.documents = new ArrayList<>(docs);
         this.index = new HashMap<>();
         this.docLen = new int[docs.size()];
@@ -68,7 +68,7 @@ public class BM25Retriever {
     /**
      * BM25 检索
      */
-    public List<RagDocument> retrieve(String query) {
+    public synchronized List<RagDocument> retrieve(String query) {
         if (documents.isEmpty()) {
             return Collections.emptyList();
         }
@@ -125,7 +125,18 @@ public class BM25Retriever {
     /**
      * 追加文档并重建索引
      */
-    public void appendDocuments(List<RagDocument> newDocs) {
+    public synchronized void appendDocuments(List<RagDocument> newDocs) {
+        documents.addAll(newDocs);
+        indexDocuments(documents);
+    }
+
+    /**
+     * 替换同一来源文件的所有文档，并重建内存中的 BM25 索引。
+     */
+    public synchronized void replaceSourceFileDocuments(String sourceFile, List<RagDocument> newDocs) {
+        documents = documents.stream()
+                .filter(doc -> !Objects.equals(sourceFile, doc.getSourceFile()))
+                .collect(Collectors.toCollection(ArrayList::new));
         documents.addAll(newDocs);
         indexDocuments(documents);
     }
